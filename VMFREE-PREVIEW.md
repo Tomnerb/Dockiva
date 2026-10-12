@@ -185,7 +185,7 @@ is reused, so the separate Redis test launcher uses its own state directory.
 The supported preview API now runs entirely in Go/C. Authenticated API startup,
 OCI imports, registry digest checks, lifecycle, snapshot logs, stale-supervisor
 reconciliation and state compatibility are implemented. Scope and evidence are in
-[the migration report](docs/DOCKIVAD-GO-MIGRATION-2026-09-22.md). General Docker
+[the migration report](https://github.com/Tomnerb/vmfree-runtime/blob/main/docs/DOCKIVA-INTEGRATION.md#dockivad-go-migration). General Docker
 features, machine-wide pressure management and production isolation are still open.
 
 The separate `bin/Launch Dockiva Go Test.command` starts `dockiva-go-test.app` with
@@ -205,4 +205,4 @@ All compatibility results remain EXPERIMENTAL.
 Use `bin/Launch Dockiva Profiles Test.command` for the latest isolated build,
 `bin/dockiva-profiles-test.app`, with `~/.vmfree-dockiva-profiles-test` state.
 Select VM-free if an existing preference chooses another engine.
-[Implementation and evidence](docs/COMPATIBILITY-PROFILES-2026-09-22.md).
+[Implementation and evidence](https://github.com/Tomnerb/vmfree-runtime/blob/main/docs/DOCKIVA-INTEGRATION.md#compatibility-profiles).

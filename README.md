@@ -505,10 +505,10 @@ The Go control-plane test build is `bin/dockiva-go-test.app`. Use
 `bin/Launch Dockiva Go Test.command` for isolated engine state. The helper migrates
 the supported preview API, OCI preparation, lifecycle, logs and recovery to Go/C.
 Existing running engines are reused; this launcher prevents an older Python daemon
-from masking the new build. See [migration evidence](docs/DOCKIVAD-GO-MIGRATION-2026-09-22.md).
+from masking the new build. See [migration evidence](https://github.com/Tomnerb/vmfree-runtime/blob/main/docs/DOCKIVA-INTEGRATION.md#dockivad-go-migration).
 
 The newer `bin/dockiva-profiles-test.app` adds digest-bound profiles and native
 capability negotiation. Use `bin/Launch Dockiva Profiles Test.command` for
 separate state. Inspect includes the selected backend, policy and experimental
-evidence scope; [profile verification](docs/COMPATIBILITY-PROFILES-2026-09-22.md)
+evidence scope; [profile verification](https://github.com/Tomnerb/vmfree-runtime/blob/main/docs/DOCKIVA-INTEGRATION.md#compatibility-profiles)
 includes backend replacement, aliases, restart persistence and service tests.
