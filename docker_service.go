@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"sort"
@@ -219,6 +220,17 @@ func NewDockerService() (*DockerService, error) {
 }
 
 func (s *DockerService) Status() DockerStatus {
+	if r, ok := s.currentRuntime().(*vmfreeRuntime); ok {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		info := r.Info(ctx)
+		status := DockerStatus{Connected: info.Connected, APIVersion: "1.45", OSType: "linux"}
+		if !info.Connected {
+			status.Error = info.Message
+		}
+		return status
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
@@ -300,6 +312,10 @@ func (s *DockerService) ListImages() ([]ImageInfo, error) {
 }
 
 func (s *DockerService) RemoveImage(imageID string, force bool) error {
+	if _, ok := s.currentRuntime().(*vmfreeRuntime); ok {
+		return errors.New("operation unsupported by VM-free preview")
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
@@ -365,6 +381,10 @@ func (s *DockerService) ListVolumes() ([]VolumeInfo, error) {
 }
 
 func (s *DockerService) RemoveVolume(name string, force bool) error {
+	if _, ok := s.currentRuntime().(*vmfreeRuntime); ok {
+		return errors.New("operation unsupported by VM-free preview")
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 
@@ -432,6 +452,10 @@ func (s *DockerService) ListNetworks() ([]NetworkInfo, error) {
 }
 
 func (s *DockerService) RemoveNetwork(networkID string) error {
+	if _, ok := s.currentRuntime().(*vmfreeRuntime); ok {
+		return errors.New("operation unsupported by VM-free preview")
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 
@@ -511,6 +535,10 @@ func (s *DockerService) RemoveContainer(containerID string, force bool) error {
 }
 
 func (s *DockerService) ComposeProjectAction(project string, action string) error {
+	if _, ok := s.currentRuntime().(*vmfreeRuntime); ok {
+		return errors.New("operation unsupported by VM-free preview")
+	}
+
 	project = strings.TrimSpace(project)
 	action = strings.ToLower(strings.TrimSpace(action))
 

@@ -194,7 +194,7 @@ func (s *DockerService) GetRuntimeOverview() RuntimeOverview {
 
 	return RuntimeOverview{
 		Active:     active,
-		Candidates: platformRuntimeCandidates(),
+		Candidates: append(platformRuntimeCandidates(), vmfreeCandidate()),
 	}
 }
 
@@ -210,6 +210,8 @@ func (s *DockerService) SelectContainerRuntime(provider string) error {
 	)
 
 	switch provider {
+	case "vmfree":
+		next = newVMFreeRuntime()
 	case "docker", "moby":
 		next = newDockerRuntime(s)
 	default:
