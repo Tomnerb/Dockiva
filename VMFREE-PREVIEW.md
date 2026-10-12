@@ -60,21 +60,22 @@ This section supersedes older capability statements further down the page.
   running), so an exec failure reported through shared memory (glibc
   `posix_spawn`) is not seen by the parent. Hot system calls (socket and file
   reads and writes, `lseek`, `epoll_wait`, `mmap`/`munmap`, copy-on-write
-  faults) run without the
-  runtime's global lock; process switches only reload the page-table base and
+  faults) run without the runtime's global lock. When such a call would block
+  on sockets while other vCPUs are idle, the process waits for them itself for
+  up to 2 ms, still without the lock, so a server's next request skips the
+  scheduler. Process switches only reload the page-table base and
   descriptor-table pointers, and blocked processes wake on their own sockets,
   pipes, futexes and signals. `pgbench` against `postgres:16-alpine` (scale 1,
-  through the engine, 12 vCPUs) compared with the same image in an OrbStack VM
-  on the same Mac:
+  12 vCPUs) compared with the same image in an OrbStack VM on the same Mac:
 
   | Workload | Native | VM |
   |---|---|---|
-  | TPC-B, 1 client | 2,876 tps | 822 tps |
-  | TPC-B, 10 clients | 2,339 tps | 1,065 tps |
-  | TPC-B, 50 clients | 1,470 tps | 627 tps |
-  | Select-only, 10 clients | 35,005 tps | 44,607 tps |
-  | Select-only, 50 clients | 50,912 tps | 68,085 tps |
-  | New connection per transaction | 234 tps | 347 tps |
+  | TPC-B, 1 client | 2,313 tps | 822 tps |
+  | TPC-B, 10 clients | 3,467 tps | 1,065 tps |
+  | TPC-B, 50 clients | 2,158 tps | 627 tps |
+  | Select-only, 10 clients | 60,673 tps | 44,607 tps |
+  | Select-only, 50 clients | 60,720 tps | 68,085 tps |
+  | New connection per transaction | 207 tps | 347 tps |
 
   The write-heavy lead is not a durability-equivalent comparison: guest `fsync`
   maps to macOS `fsync`, which does not force a drive-cache flush
