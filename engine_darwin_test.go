@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestStageCompressedBundledGuestAssets(t *testing.T) {
@@ -142,5 +143,50 @@ func TestDockivaVMMStateDirIgnoresStaleLegacyVM(t *testing.T) {
 	want := filepath.Join(home, "Library", "Application Support", "Dockiva", "run")
 	if got != want {
 		t.Fatalf("state dir = %q, want current state %q", got, want)
+	}
+}
+
+// A guest whose Docker never answers (for example a kernel panic at boot) makes
+// Start fail and stop the VM, instead of leaving it spinning in the background.
+func TestNativeVMStartStopsGuestThatNeverAnswers(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	guest := filepath.Join(home, "guest")
+	if err := os.MkdirAll(guest, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"vmlinux", "rootfs.ext4"} {
+		if err := os.WriteFile(filepath.Join(guest, name), []byte(name), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("DOCKIVA_GUEST_DIR", guest)
+
+	// serve --kernel K --disk D --state-dir S ...: a plain docker.sock file that
+	// nothing answers on; stop --state-dir S: record the call and end serve.
+	stopped := filepath.Join(home, "stopped")
+	helper := filepath.Join(home, "dockiva-vmm")
+	script := fmt.Sprintf(`#!/bin/sh
+case "$1" in
+serve) : > "$7/docker.sock"; echo $$ > "$7/vmm.pid"; exec sleep 30 ;;
+stop) touch %q; kill "$(cat "$3/vmm.pid")" 2>/dev/null; exit 0 ;;
+status) echo '{"running":false}' ;;
+esac
+`, stopped)
+	if err := os.WriteFile(helper, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("DOCKIVA_VMM_PATH", helper)
+
+	previous := nativeVMReadyTimeout
+	nativeVMReadyTimeout = 2 * time.Second
+	defer func() { nativeVMReadyTimeout = previous }()
+
+	_, err := darwinEngineBackend{}.Start(nil, "")
+	if err == nil {
+		t.Fatal("Start succeeded although Docker never answered")
+	}
+	if !fileExists(stopped) {
+		t.Fatalf("Start did not stop the unready VM: %v", err)
 	}
 }
