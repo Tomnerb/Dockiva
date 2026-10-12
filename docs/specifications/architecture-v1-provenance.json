@@ -1,0 +1,8 @@
+{
+  "baseline": "1.0",
+  "adopted": "2026-09-22",
+  "source": "dockiva_final_architecture_v1.docx",
+  "source_sha256": "2ff58bdab35568d199164152a003911c671d98955fb524146ddfabcfe55fb511",
+  "archived_copy_sha256": "2ff58bdab35568d199164152a003911c671d98955fb524146ddfabcfe55fb511",
+  "authority": "User-supplied frozen production architecture; implementation status remains in MILESTONE-STATUS.md"
+}

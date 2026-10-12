@@ -1,0 +1,10 @@
+PASS packaged native handshake interpreter
+PASS packaged native handshake unicorn
+PASS alias requires writable root before state publication
+PASS alias inspection exposes digest profile and experimental scope
+PASS missing required backend fails without interpreter fallback
+PASS failed negotiation launches no guest worker
+PASS restored backend runs renamed prepared Redis
+PASS daemon reconnect preserves exact selected profile
+PASS saved launch-policy drift rejected before restart
+PASS restored policy remains removable

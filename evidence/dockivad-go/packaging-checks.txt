@@ -1,0 +1,5 @@
+PASS stale Python files removed on helper replacement
+PASS legacy Python bundle rejected before target replacement
+PASS final app signature and executable metadata
+PASS final app contains no Python runtime/files
+PASS test launcher shell syntax

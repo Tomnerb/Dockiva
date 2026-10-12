@@ -1,0 +1,15 @@
+{
+  "helper_sha256": "0278fa7af31cb2e051a97645b793988c4c1afc6e67f25e7099280890cc816192",
+  "checks": [
+    "packaged native handshake interpreter",
+    "packaged native handshake unicorn",
+    "alias requires writable root before state publication",
+    "alias inspection exposes digest profile and experimental scope",
+    "missing required backend fails without interpreter fallback",
+    "failed negotiation launches no guest worker",
+    "restored backend runs renamed prepared Redis",
+    "daemon reconnect preserves exact selected profile",
+    "saved launch-policy drift rejected before restart",
+    "restored policy remains removable"
+  ]
+}

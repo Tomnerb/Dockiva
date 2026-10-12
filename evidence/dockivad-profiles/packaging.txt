@@ -1,0 +1,6 @@
+PASS prepared fixture/catalog digest agreement
+PASS stale fixture pin rejected
+PASS app helper/native binaries match tested build
+PASS deep strict signature verification
+PASS executable metadata and launcher syntax
+PASS no Python runtime/files in app

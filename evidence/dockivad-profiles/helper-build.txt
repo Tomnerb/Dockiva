@@ -1,0 +1,9 @@
+/Users/macbookpro16m2max/Documents/vmfree-runtime/build/vmfree-c
+/Users/macbookpro16m2max/Documents/vmfree-runtime/build/vmfree-c-unicorn
+{"name": "vmfree/redis:preview", "digest": "sha256:bab8ae06b593428bbf090c1a6b8c3900f1512d38b3bb0f98f7108273296a0167", "source_image": "sha256:3b0f54bf27a77c98d319dc3a6706ed500a8985309f0b6c6407599b869f4a2bd9", "scope": "Prepared Redis 7.4.2, experimental Unicorn, private container data, loopback TCP"}
+/Users/macbookpro16m2max/Documents/vmfree-runtime/build/dockiva-profiles/.dockivad-build-m_n00led/vmfree-engine/dockivad: replacing existing signature
+/Users/macbookpro16m2max/Documents/vmfree-runtime/build/dockiva-profiles/.dockivad-build-m_n00led/vmfree-engine/vmfree-engine: replacing existing signature
+/Users/macbookpro16m2max/Documents/vmfree-runtime/build/dockiva-profiles/.dockivad-build-m_n00led/vmfree-engine/_internal/build/vmfree-c: replacing existing signature
+/Users/macbookpro16m2max/Documents/vmfree-runtime/build/dockiva-profiles/.dockivad-build-m_n00led/vmfree-engine/_internal/build/vmfree-worker: replacing existing signature
+/Users/macbookpro16m2max/Documents/vmfree-runtime/build/dockiva-profiles/.dockivad-build-m_n00led/vmfree-engine/_internal/build/vmfree-c-unicorn: replacing existing signature
+/Users/macbookpro16m2max/Documents/vmfree-runtime/build/dockiva-profiles/vmfree-engine/vmfree-engine

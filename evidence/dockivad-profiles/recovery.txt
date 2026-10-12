@@ -1,0 +1,21 @@
+PASS running legacy state discovered without duplicate worker
+PASS legacy container restarted by Go supervisor
+PASS old CLI can stop Go supervisor for rollback
+PASS Go control plane reports its implementation
+PASS authentication rejects wrong token
+PASS duplicate daemon refused
+PASS three prepared images discovered
+PASS exit status and framed logs preserved
+PASS 20 immediate restarts and removal tolerate natural exit and supervisor cleanup
+PASS concurrent admission: exactly four runs, fifth rejected
+PASS live daemon/supervisor/guard/runtime tree contains no Python
+PASS token rotates after daemon crash
+PASS daemon recovery preserves worker server-0
+PASS daemon recovery preserves worker server-1
+PASS daemon recovery preserves worker server-3
+PASS daemon recovery preserves worker server-4
+PASS supervisor crash closes worker listener and reconciles state
+PASS failed supervisor can be restarted safely
+PASS guard crash also removes native worker
+PASS no hidden partial container publication
+PASS bundle has no CPython, .py or .pyc files

@@ -1,0 +1,32 @@
+{
+  "app": "/Users/macbookpro16m2max/GolandProjects/devstack/devstack/bin/dockiva-profiles-test.app",
+  "launcher": "/Users/macbookpro16m2max/GolandProjects/devstack/devstack/bin/Launch Dockiva Profiles Test.command",
+  "signature": "ad-hoc: deep strict verification passed",
+  "gui_click_tested": false,
+  "source_hashes": {
+    "dockivad/api.go": "c7035f655f6d8fc28dca760f555c046449e2d47129d94c58833dcc725bec7922",
+    "dockivad/common.go": "57e9ef7a33261c1852b2da0b2505fd38b012bf53bf2157c7b8e89cc1123288a4",
+    "dockivad/engine_test.go": "d6f55e39288f4aebdfa6276d7af0c1ebf71453709d7ba780bd38b184bcdef4b6",
+    "dockivad/image.go": "f2756abf48b5ef24f93862239f00b5cec9b5bf194ad94b6348910304aca6786f",
+    "dockivad/lifecycle.go": "27cdf93763b7a9e6785f061d7732782b7adc65ba506b5e9d55bc8af1b39262bd",
+    "dockivad/main.go": "6af1d099c50a50d8f45e126889a2ba283aa7464e08e7ea56213a63f03cd7b8b6",
+    "dockivad/profiles.go": "d8933c50b906555afa2b5e0317b1ec822512ca4745a4995cceec78e139813f2e",
+    "dockivad/profiles.json": "a3197e57b6a10f961c9d8a9d8918b9adca645b4bf7def7752593d36069a80e1a",
+    "dockivad/profiles_test.go": "c317bc815c8774b9215700726967b248dc7258cd7d37e6afa268c2baba7ad74f",
+    "dockivad/registry.go": "a4647e8eec996712fd3165c19cfb46c5abbcd1f287a95bcfb2022df5856adc07",
+    "native/runtime.c": "d11e13b18caed73bcbd17b58069364f0fdd101442f46e37afefac6b20beb394a",
+    "scripts/bundle_dockiva_engine.py": "e55e480549fe8fdfa8994f52cf9f50c5cc9a746f148f40aafa87d8455dab9838",
+    "scripts/verify_dockivad.py": "10475ea469fdf6ae246cdd52b8efde7999e150f78eea2b9e541187c2d3e6e5d9",
+    "scripts/verify_dockivad_profiles.py": "11fc695a9e2f6dde49f052c6cd9351b912cb3c8088317b0031fdb32f06ce5494"
+  },
+  "artifact_hashes": {
+    "Contents/MacOS/dockiva-profiles-test": "bab0f6e5c94d14be3468d05648d46c3d0a9277765280191dd42225fe9b172466",
+    "Contents/Resources/vmfree-engine/vmfree-engine": "0278fa7af31cb2e051a97645b793988c4c1afc6e67f25e7099280890cc816192",
+    "Contents/Resources/vmfree-engine/dockivad": "5583685bba1039178ce2f01fb911a525ec49e82d2953612522cbbfe9cf5f09ae",
+    "Contents/Resources/vmfree-engine/_internal/build/vmfree-c": "b70dd7583d9d1f46c9ecdc164429332823bdb5142f7de36bae9d041f75689dcf",
+    "Contents/Resources/vmfree-engine/_internal/build/vmfree-c-unicorn": "46cd634bfdfe0492aa28871092f93e17c0e9156c81a00ceb2296d1f9bea277d6",
+    "Contents/Resources/vmfree-engine/_internal/build/vmfree-worker": "ca7600ee9cb9d85ed37e68624b4e349617d261a1979b737e05eae3589cc6aad0"
+  },
+  "profile_checks": 10,
+  "recovery_checks": 21
+}
