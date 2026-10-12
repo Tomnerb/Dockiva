@@ -523,7 +523,7 @@ onBeforeUnmount(() => {
       </div>
 
       <div v-if="settings.engineBackend === 'vz' && status && !status.helperInstalled" class="mt-4 rounded-lg border border-amber-900/60 bg-amber-950/20 p-4 text-sm text-amber-300">
-        Build/install the native VMM helper and guest assets. See <code class="ml-2 rounded bg-black/30 px-2 py-1 font-mono text-xs">README-MILESTONE13.md</code>
+        Build/install the native VMM helper and guest assets. See <code class="ml-2 rounded bg-black/30 px-2 py-1 font-mono text-xs">docs/MILESTONES.md (Milestone 13)</code>
       </div>
 
       <div v-if="error" class="mt-4 whitespace-pre-wrap rounded-lg border border-red-900 bg-red-950/30 p-4 text-sm text-red-300">{{ error }}</div>

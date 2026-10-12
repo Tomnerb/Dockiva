@@ -491,7 +491,7 @@ runtime_*.go     Runtime-neutral Docker/containerd adapters
 ```
 
 Milestone-specific implementation decisions and known limitations are retained
-in the `README-MILESTONE*.md` files.
+in [docs/MILESTONES.md](docs/MILESTONES.md).
 
 ## Experimental VM-free backend
 
