@@ -11,6 +11,9 @@
 /build/.swift-module-cache/
 /build/.generated/
 
+# Separate repository (github.com/Tomnerb/vmfree-runtime), checked out here for builds
+/vmfree-runtime/
+
 # Frontend dependencies and temporary bindings
 /frontend/node_modules/
 /frontend/.bindings-tmp-*/

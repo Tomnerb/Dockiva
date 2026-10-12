@@ -99,6 +99,10 @@ func defaultAppSettings() AppSettings {
 	switch runtime.GOOS {
 	case "darwin":
 		backend = "vz"
+		if runtime.GOARCH == "arm64" {
+			backend = "vmfree"
+			runtimeProvider = "vmfree"
+		}
 	case "windows":
 		backend = "wsl2"
 		runtimeProvider = "docker"
@@ -135,6 +139,9 @@ func mergeAppSettings(defaults AppSettings, loaded AppSettings) AppSettings {
 
 func runtimeProviderForBackend(backend string) string {
 	backend = normalizeEngineBackend(backend)
+	if backend == "vmfree" {
+		return "vmfree"
+	}
 	if backend == "external" || runtime.GOOS == "windows" {
 		return "docker"
 	}
@@ -155,7 +162,7 @@ func (s *AppService) UpdateSettings(next AppSettings) error {
 	}
 
 	switch next.EngineBackend {
-	case "auto", "external", "native", "vz", "wsl2":
+	case "auto", "external", "native", "vz", "wsl2", "vmfree":
 	default:
 		return errors.New("invalid engine backend")
 	}
@@ -164,7 +171,7 @@ func (s *AppService) UpdateSettings(next AppSettings) error {
 	next.SettingsVersion = currentSettingsVersion
 
 	switch next.RuntimeProvider {
-	case "docker", "containerd":
+	case "docker", "containerd", "vmfree":
 	default:
 		return errors.New("invalid container runtime provider")
 	}

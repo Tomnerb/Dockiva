@@ -63,6 +63,14 @@ func (s *DockerService) GetEngineStatus(
 	platformOption string,
 ) EngineStatus {
 	backend = normalizeEngineBackend(backend)
+	if backend == "vmfree" {
+		r := newVMFreeRuntime()
+		defer r.Close()
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		info := r.Info(ctx)
+		return EngineStatus{Backend: "vmfree", Platform: runtime.GOOS, Supported: runtime.GOOS == "darwin" && runtime.GOARCH == "arm64", Running: info.Connected, EngineInstalled: info.Connected, Endpoint: info.Endpoint, Message: info.Message}
+	}
 
 	if backend == "external" {
 		return s.externalEngineStatus()
@@ -91,6 +99,14 @@ func (s *DockerService) StartManagedEngine(
 	platformOption string,
 ) (EngineActionResult, error) {
 	backend = normalizeEngineBackend(backend)
+	if backend == "vmfree" {
+		_, err := s.SelectEngineBackend("vmfree", "", "")
+		status := s.GetEngineStatus("vmfree", "")
+		if err == nil && !status.Running {
+			err = errors.New("VM-free engine is offline; retry Start Engine")
+		}
+		return EngineActionResult{Status: status}, err
+	}
 
 	if backend == "auto" {
 		return s.engine.Start(s, platformOption)
@@ -121,6 +137,15 @@ func (s *DockerService) SelectEngineBackend(
 	externalEndpoint string,
 ) (string, error) {
 	backend = normalizeEngineBackend(backend)
+	if backend == "vmfree" {
+		if runtime.GOOS != "darwin" || runtime.GOARCH != "arm64" {
+			return "", errors.New("VM-free preview requires an Apple Silicon Mac")
+		}
+		// Keep this identity even while offline; never expose the previous Docker store.
+		r := newVMFreeRuntime()
+		s.replaceRuntime(r)
+		return "vmfree", startVMFreeEngine(r)
+	}
 	if backend == "auto" {
 		backend = s.engine.Name()
 	}

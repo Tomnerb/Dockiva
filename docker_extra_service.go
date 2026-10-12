@@ -249,6 +249,10 @@ func countImportedImages(message string) int {
 }
 
 func (s *DockerService) GetDockerMigrationPreview() DockerMigrationPreview {
+	if _, ok := s.currentRuntime().(*vmfreeRuntime); ok {
+		return DockerMigrationPreview{Message: "Migration is unavailable for VM-free internal testing."}
+	}
+
 	preview := DockerMigrationPreview{
 		Endpoint:                 s.dockerMigrationSourceEndpoint(),
 		VolumeMigrationSupported: runtime.GOOS == "linux",
@@ -348,6 +352,10 @@ func (s *DockerService) dockerMigrationSourceClient() (*client.Client, error) {
 // namespace one at a time. This avoids a single giant archive, gives the user
 // meaningful progress, and never modifies the source Docker store.
 func (s *DockerService) MigrateDockerImages() (DockerCLIResult, error) {
+	if _, ok := s.currentRuntime().(*vmfreeRuntime); ok {
+		return DockerCLIResult{}, errors.New("operation unsupported by VM-free preview")
+	}
+
 	images, err := runDockerCLIAtEndpoint(30*time.Second, "", s.dockerMigrationSourceEndpoint(), "image", "ls", "--format", "{{.Repository}}:{{.Tag}}")
 	if err != nil {
 		return DockerCLIResult{}, err
@@ -453,6 +461,10 @@ func validDockerImageRefs(refs []string) []string {
 // MigrateDockerVolumes copies local Docker named-volume data into Dockiva's
 // managed volume store. It never stops containers or deletes Docker volumes.
 func (s *DockerService) MigrateDockerVolumes() (DockerCLIResult, error) {
+	if _, ok := s.currentRuntime().(*vmfreeRuntime); ok {
+		return DockerCLIResult{}, errors.New("operation unsupported by VM-free preview")
+	}
+
 	output, err := runDockerCLIAtEndpoint(30*time.Second, "", s.dockerMigrationSourceEndpoint(), "volume", "ls", "-q")
 	if err != nil {
 		return DockerCLIResult{}, err
@@ -495,6 +507,10 @@ func (s *DockerService) MigrateDockerVolumes() (DockerCLIResult, error) {
 
 // MigrateDockerContainers copies stopped Docker containers into Dockiva Native.
 func (s *DockerService) MigrateDockerContainers() (DockerCLIResult, error) {
+	if _, ok := s.currentRuntime().(*vmfreeRuntime); ok {
+		return DockerCLIResult{}, errors.New("operation unsupported by VM-free preview")
+	}
+
 	activeRuntime := s.currentRuntime()
 	runtime, ok := activeRuntime.(runtimeContainerCreator)
 	if !ok {
@@ -926,13 +942,19 @@ func (s *DockerService) GetContainerDetails(containerID string) (ContainerDetail
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	result, err := s.client.Load().ContainerInspect(
-		ctx,
-		containerID,
-		client.ContainerInspectOptions{},
-	)
-	if err != nil {
-		return ContainerDetails{}, err
+	var rawBytes []byte
+	if r, ok := s.currentRuntime().(*vmfreeRuntime); ok {
+		data, err := r.Inspect(ctx, containerID)
+		if err != nil {
+			return ContainerDetails{}, err
+		}
+		rawBytes = data
+	} else {
+		result, err := s.client.Load().ContainerInspect(ctx, containerID, client.ContainerInspectOptions{})
+		if err != nil {
+			return ContainerDetails{}, err
+		}
+		rawBytes = result.Raw
 	}
 
 	var raw struct {
@@ -982,7 +1004,7 @@ func (s *DockerService) GetContainerDetails(containerID string) (ContainerDetail
 		} `json:"NetworkSettings"`
 	}
 
-	if err := json.Unmarshal(result.Raw, &raw); err != nil {
+	if err := json.Unmarshal(rawBytes, &raw); err != nil {
 		return ContainerDetails{}, err
 	}
 
@@ -1033,6 +1055,10 @@ func (s *DockerService) GetContainerDetails(containerID string) (ContainerDetail
 }
 
 func (s *DockerService) GetComposeProjectDetails(project string) (ComposeProjectDetails, error) {
+	if _, ok := s.currentRuntime().(*vmfreeRuntime); ok {
+		return ComposeProjectDetails{}, errors.New("operation unsupported by VM-free preview")
+	}
+
 	project = strings.TrimSpace(project)
 	if project == "" {
 		return ComposeProjectDetails{}, errors.New("compose project name is required")
@@ -1086,6 +1112,10 @@ func (s *DockerService) GetComposeProjectDetails(project string) (ComposeProject
 }
 
 func (s *DockerService) RunComposeCommand(project string, action string) (DockerCLIResult, error) {
+	if _, ok := s.currentRuntime().(*vmfreeRuntime); ok {
+		return DockerCLIResult{}, errors.New("operation unsupported by VM-free preview")
+	}
+
 	action = strings.ToLower(strings.TrimSpace(action))
 
 	switch action {
@@ -1166,11 +1196,21 @@ func (s *DockerService) PullImage(reference string) (DockerCLIResult, error) {
 		return DockerCLIResult{}, errors.New("image reference is required")
 	}
 
+	// VM-free pulls through its own engine; never fall through to the Docker CLI.
+	if _, ok := s.currentRuntime().(*vmfreeRuntime); ok {
+		result, err := s.RuntimePullImage(reference)
+		return DockerCLIResult{Output: result.Detail}, err
+	}
+
 	output, err := runDockerCLI(30*time.Minute, "", "pull", reference)
 	return DockerCLIResult{Output: output}, err
 }
 
 func (s *DockerService) CreateVolume(name string, driver string) (DockerCLIResult, error) {
+	if _, ok := s.currentRuntime().(*vmfreeRuntime); ok {
+		return DockerCLIResult{}, errors.New("operation unsupported by VM-free preview")
+	}
+
 	name = strings.TrimSpace(name)
 	driver = strings.TrimSpace(driver)
 
@@ -1191,6 +1231,10 @@ func (s *DockerService) CreateVolume(name string, driver string) (DockerCLIResul
 }
 
 func (s *DockerService) CreateNetwork(name string, driver string) (DockerCLIResult, error) {
+	if _, ok := s.currentRuntime().(*vmfreeRuntime); ok {
+		return DockerCLIResult{}, errors.New("operation unsupported by VM-free preview")
+	}
+
 	name = strings.TrimSpace(name)
 	driver = strings.TrimSpace(driver)
 
@@ -1219,6 +1263,10 @@ func (s *DockerService) CreateNetwork(name string, driver string) (DockerCLIResu
 }
 
 func (s *DockerService) GetDiskUsage() ([]DockerDiskUsageItem, error) {
+	if _, ok := s.currentRuntime().(*vmfreeRuntime); ok {
+		return nil, errors.New("resource accounting unavailable for VM-free preview")
+	}
+
 	output, err := runDockerCLI(
 		2*time.Minute,
 		"",
@@ -1270,6 +1318,10 @@ func (s *DockerService) GetDiskUsage() ([]DockerDiskUsageItem, error) {
 }
 
 func (s *DockerService) PruneDocker(scope string) (DockerCLIResult, error) {
+	if _, ok := s.currentRuntime().(*vmfreeRuntime); ok {
+		return DockerCLIResult{}, errors.New("operation unsupported by VM-free preview")
+	}
+
 	scope = strings.ToLower(strings.TrimSpace(scope))
 
 	var args []string

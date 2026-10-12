@@ -57,11 +57,15 @@ func main() {
 		}
 	}
 
-	provider, err := dockerService.SelectEngineBackend(
-		settings.EngineBackend,
-		settings.WSLDistro,
-		settings.DockerEndpoint,
-	)
+	var provider string
+	if settings.EngineBackend == "vmfree" {
+		// Restore identity without blocking window creation; startup runs below.
+		dockerService.replaceRuntime(newVMFreeRuntime())
+		provider = "vmfree"
+	} else {
+		provider, err = dockerService.SelectEngineBackend(settings.EngineBackend, settings.WSLDistro, settings.DockerEndpoint)
+	}
+
 	if err != nil {
 		log.Printf("could not restore engine backend %q: %v", settings.EngineBackend, err)
 	} else {

@@ -167,6 +167,10 @@ tasks:
       - cp build/darwin/icons.icns "{{.BIN_DIR}}/{{.APP_NAME}}.app/Contents/Resources"
       - cp "{{.BIN_DIR}}/{{.APP_NAME}}" "{{.BIN_DIR}}/{{.APP_NAME}}.app/Contents/MacOS"
       - cp "{{.INFO_PLIST}}" "{{.BIN_DIR}}/{{.APP_NAME}}.app/Contents/Info.plist"
+      - cmd: '/usr/libexec/PlistBuddy -c "Set :CFBundleExecutable {{.APP_NAME}}" "{{.BIN_DIR}}/{{.APP_NAME}}.app/Contents/Info.plist"'
+        platforms: [darwin]
+      - cmd: '{{if eq (.ARCH | default ARCH) "arm64"}}bash scripts/copy-vmfree-helper.sh "{{.BIN_DIR}}/vmfree-engine" "{{.BIN_DIR}}/{{.APP_NAME}}.app/Contents/Resources/vmfree-engine"{{else}}true{{end}}'
+        platforms: [darwin]
       - task: '{{if eq OS "darwin"}}codesign:adhoc{{else}}codesign:skip{{end}}'
     vars:
       INFO_PLIST: '{{.INFO_PLIST | default "build/darwin/Info.plist"}}'
@@ -176,6 +180,9 @@ tasks:
     internal: true
     cmds:
       - codesign --force --deep --sign - "{{.BIN_DIR}}/{{.APP_NAME}}.app"
+      # --deep above strips nested entitlements; the native runtime needs com.apple.security.hypervisor.
+      - cmd: 'if [ -f "{{.BIN_DIR}}/{{.APP_NAME}}.app/Contents/Resources/vmfree-engine/_internal/build/vmfree-c-hvf" ]; then codesign --force --options runtime --entitlements build/darwin/vmfree-hvf.entitlements.plist --sign - "{{.BIN_DIR}}/{{.APP_NAME}}.app/Contents/Resources/vmfree-engine/_internal/build/vmfree-c-hvf"; codesign --force --sign - "{{.BIN_DIR}}/{{.APP_NAME}}.app"; fi'
+
 
   codesign:skip:
     summary: Skips codesigning when cross-compiling
@@ -190,7 +197,10 @@ tasks:
       - cp build/darwin/icons.icns "{{.BIN_DIR}}/{{.APP_NAME}}.dev.app/Contents/Resources"
       - cp "{{.BIN_DIR}}/{{.APP_NAME}}" "{{.BIN_DIR}}/{{.APP_NAME}}.dev.app/Contents/MacOS"
       - cp "build/darwin/Info.dev.plist" "{{.BIN_DIR}}/{{.APP_NAME}}.dev.app/Contents/Info.plist"
+      - '{{if eq (.ARCH | default ARCH) "arm64"}}bash scripts/copy-vmfree-helper.sh "{{.BIN_DIR}}/vmfree-engine" "{{.BIN_DIR}}/{{.APP_NAME}}.dev.app/Contents/Resources/vmfree-engine"{{else}}true{{end}}'
       - codesign --force --deep --sign - "{{.BIN_DIR}}/{{.APP_NAME}}.dev.app"
+      # Restore the native runtime's entitlement that --deep stripped.
+      - cmd: 'R="{{.BIN_DIR}}/{{.APP_NAME}}.dev.app/Contents/Resources/vmfree-engine/_internal/build"; if [ -f "$R/vmfree-c-hvf" ]; then codesign --force --options runtime --entitlements build/darwin/vmfree-hvf.entitlements.plist --sign - "$R/vmfree-c-hvf"; fi; codesign --force --sign - "{{.BIN_DIR}}/{{.APP_NAME}}.dev.app"'
       - '"{{.BIN_DIR}}/{{.APP_NAME}}.dev.app/Contents/MacOS/{{.APP_NAME}}"'
 
   sign:

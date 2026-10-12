@@ -1497,14 +1497,20 @@ async function runtimeCreateContainer() {
 
   if (!name || !image || runtimeOperationBusy.value) return
 
-  const command = runtimeCommand.value.trim()
-    ? runtimeCommand.value.trim().split(/\s+/)
-    : []
+  let command: string[] = []
+  try {
+    if (runtimeCommand.value.trim()) {
+      command = activeRuntime.value?.provider === 'vmfree'
+        ? JSON.parse(runtimeCommand.value)
+        : runtimeCommand.value.trim().split(/\s+/)
+      if (!Array.isArray(command) || !command.every(arg => typeof arg === 'string')) throw new Error('Command must be a JSON array of strings.')
+    }
+  } catch (err) { showError(err); return }
 
   let portMappings: RuntimePortMapping[] = []
 
   try {
-    portMappings = parseRuntimePorts(runtimePorts.value)
+    portMappings = parseRuntimePorts(runtimeCapabilities.value.portPublishing ? runtimePorts.value : '')
   } catch (err) {
     showError(err)
     return
@@ -2069,7 +2075,7 @@ onBeforeUnmount(() => {
 
           <section
             v-if="
-              activeRuntime?.provider === 'containerd' &&
+              ['containerd', 'vmfree'].includes(activeRuntime?.provider ?? '') &&
               runtimeCapabilities.createContainer
             "
             class="panel p-4"
@@ -2077,10 +2083,11 @@ onBeforeUnmount(() => {
             <div class="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <div class="text-sm font-medium text-zinc-300">
-                  Direct containerd
+                  {{ activeRuntime?.provider === "vmfree" ? "VM-free internal testing" : "Direct containerd" }}
                 </div>
                 <div class="mt-1 text-xs leading-5 text-zinc-600">
-                  Namespace <span class="font-mono text-zinc-400">dockiva</span>.
+                  <template v-if="activeRuntime?.provider === 'vmfree'">Imported supported images only. Read-only containers; snapshot logs. Command accepts a JSON array, for example [&quot;-c&quot;,&quot;busybox echo hello&quot;].</template>
+                  <template v-else>Namespace <span class="font-mono text-zinc-400">dockiva</span>.
                   <template v-if="runtimeCapabilities.networks">
                     CNI bridge, host DNS, and localhost TCP publishing are ready.
                   </template>
@@ -2088,12 +2095,24 @@ onBeforeUnmount(() => {
                     Networking helper is not ready. Run
                     <span class="font-mono text-zinc-400">scripts/install-containerd-networking.sh</span>.
                   </template>
+                  </template>
                 </div>
               </div>
 
               <span class="rounded bg-amber-500/10 px-2 py-1 text-[10px] text-amber-400">
                 experimental
               </span>
+            </div>
+
+            <div v-if="activeRuntime?.provider === 'vmfree'" class="mt-4 space-y-2 text-xs text-zinc-400">
+              <div class="flex gap-2">
+                <button class="toolbar-button" @click="runtimeImageRef = 'vmfree/server:demo'; runtimeContainerName = 'web-demo'; runtimeCommand = '[&quot;18080&quot;]'; runtimePorts = ''; runtimeAutoStart = true">HTTP server demo</button>
+                <button class="toolbar-button" @click="runtimeImageRef = 'vmfree/redis:preview'; runtimeContainerName = 'redis-preview'; runtimeCommand = ''; runtimePorts = ''; runtimeAutoStart = true">Redis preview</button>
+                <button class="toolbar-button" @click="runtimeImageRef = 'vmfree/shell:demo'; runtimeContainerName = 'hello-test'; runtimeCommand = '[&quot;-c&quot;,&quot;busybox echo hello&quot;]'; runtimePorts = ''; runtimeAutoStart = true">Hello demo</button>
+              </div>
+              <p>The HTTP demo stays running: create it, then open http://127.0.0.1:18080/ in your browser. Leave port mappings empty. If that port is occupied, change the command to another port such as [&quot;18081&quot;].</p>
+              <p>Redis preview listens on 127.0.0.1:16379. Leave Command and port mappings empty. Its private data survives Stop/Start and Restart; Remove deletes it. One preview per port. Experimental prepared Redis 7.4.2 only; PostgreSQL and Valkey are not qualified.</p>
+              <p>The Hello demo finishes immediately. Exited with code 0 means success. Both demos remain subject to the runtime's execution limits.</p>
             </div>
 
             <div class="mt-4 grid gap-2 xl:grid-cols-[1.25fr_1fr_1.25fr_1fr_auto_auto]">
@@ -2125,6 +2144,7 @@ onBeforeUnmount(() => {
               <button
                 class="toolbar-button"
                 :disabled="!runtimeImageRef.trim() || !!runtimeOperationBusy"
+                v-if="runtimeCapabilities.pullImages"
                 @click="runtimePullImage"
               >
                 {{ runtimeOperationBusy === 'pull' ? 'Pulling…' : 'Pull Image' }}
@@ -2355,7 +2375,7 @@ onBeforeUnmount(() => {
 
         <!-- IMAGES -->
         <div v-else-if="activeTab === 'images'" class="space-y-4">
-          <form class="panel flex flex-wrap items-center gap-2 p-4" @submit.prevent="pullImage">
+          <form v-if="activeRuntime?.provider !== 'vmfree' || runtimeCapabilities.pullImages" class="panel flex flex-wrap items-center gap-2 p-4" @submit.prevent="pullImage">
             <input
               v-model="pullImageRef"
               class="field min-w-64 flex-1"
@@ -2395,7 +2415,7 @@ onBeforeUnmount(() => {
                   <td class="px-4 py-4 text-sm text-zinc-500">{{ formatDate(image.created) }}</td>
                   <td class="px-4 py-4 font-mono text-xs text-zinc-600">{{ image.shortId }}</td>
                   <td class="px-4 py-4 text-right">
-                    <button class="action-button text-red-400" @click="removeImage(image)">
+                    <button v-if="activeRuntime?.provider !== 'vmfree'" class="action-button text-red-400" @click="removeImage(image)">
                       Delete
                     </button>
                   </td>

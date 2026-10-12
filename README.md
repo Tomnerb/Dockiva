@@ -6,6 +6,8 @@
 
 Dockiva is a lightweight, cross-platform desktop environment for managing local containers. It combines a Go and Wails core with a Vue interface and supports both platform-native runtimes and existing Docker endpoints.
 
+The [frozen macOS architecture v1.0](docs/FINAL-ARCHITECTURE-V1.md) defines the production destination: SwiftUI/AppKit UI, Go `dockivad`, and a supervised C Linux Personality/runtime, with no Python in production execution. The current Vue/Wails desktop is transitional; the bundled control plane now uses Go dockivad with C execution workers and no Python runtime. Valkey persistence (V0–V11) and PostgreSQL recovery/stress (P0–P12) remain open acceptance gates; prepared Redis evidence does not qualify them.
+
 Dockiva is open source under the [Apache License 2.0](LICENSE). Contributions
 are welcome; read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull
 request. Report suspected vulnerabilities privately according to
@@ -489,4 +491,24 @@ runtime_*.go     Runtime-neutral Docker/containerd adapters
 ```
 
 Milestone-specific implementation decisions and known limitations are retained
-in the `README-MILESTONE*.md` files.
+in [docs/MILESTONES.md](docs/MILESTONES.md).
+
+## Experimental VM-free backend
+
+New Apple Silicon installations default to the bundled ARM64 VM-free runtime, which starts automatically without terminal setup. Existing engine choices are preserved. The runtime remains for internal testing. Its supported image and lifecycle subset is distinct from the native Linux VM backend. See [VMFREE-PREVIEW.md](VMFREE-PREVIEW.md) for project definitions, setup, capabilities and acceptance limits.
+
+New containers run natively under Hypervisor.framework where available (no guest kernel), with the interpreter as fallback; the Unicorn adapter has been removed. See the current-state section of [VMFREE-PREVIEW.md](VMFREE-PREVIEW.md).
+
+The separate local `bin/dockiva-redis-test.app` build adds a prepared Redis 7.4.2 preset (originally on the now-removed Unicorn adapter). Use `bin/Launch Dockiva Redis Test.command` for isolated engine state, select VM-free, and create the Redis preview preset. It listens on `127.0.0.1:16379`; private data survives Stop/Start and Restart. The packaged adapter test passes; native GUI clicks, stock Redis images, PostgreSQL/Valkey and production use remain unqualified.
+
+The Go control-plane test build is `bin/dockiva-go-test.app`. Use
+`bin/Launch Dockiva Go Test.command` for isolated engine state. The helper migrates
+the supported preview API, OCI preparation, lifecycle, logs and recovery to Go/C.
+Existing running engines are reused; this launcher prevents an older Python daemon
+from masking the new build. See [migration evidence](https://github.com/Tomnerb/vmfree-runtime/blob/main/docs/DOCKIVA-INTEGRATION.md#dockivad-go-migration).
+
+The newer `bin/dockiva-profiles-test.app` adds digest-bound profiles and native
+capability negotiation. Use `bin/Launch Dockiva Profiles Test.command` for
+separate state. Inspect includes the selected backend, policy and experimental
+evidence scope; [profile verification](https://github.com/Tomnerb/vmfree-runtime/blob/main/docs/DOCKIVA-INTEGRATION.md#compatibility-profiles)
+includes backend replacement, aliases, restart persistence and service tests.

@@ -13,6 +13,10 @@ func TestDefaultAppSettingsPreferNativeEngine(t *testing.T) {
 	switch runtime.GOOS {
 	case "darwin":
 		wantBackend = "vz"
+		if runtime.GOARCH == "arm64" {
+			wantBackend = "vmfree"
+			wantRuntime = "vmfree"
+		}
 	case "windows":
 		wantBackend = "wsl2"
 		wantRuntime = "docker"
@@ -38,6 +42,9 @@ func TestRuntimeProviderFollowsEngineIdentity(t *testing.T) {
 	}
 
 	wantNative := "containerd"
+	if runtime.GOOS == "darwin" && runtime.GOARCH == "arm64" {
+		wantNative = "vmfree"
+	}
 	if runtime.GOOS == "windows" {
 		wantNative = "docker"
 	}

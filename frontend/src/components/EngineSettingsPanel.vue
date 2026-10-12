@@ -174,13 +174,14 @@ function formatUpdateBytes(value: number) {
 
 const backendOptions = computed(() => {
   const native = props.platform?.os === 'darwin'
-    ? { value: 'vz', title: 'Dockiva Native', desc: 'Run a minimal Linux guest with Apple Virtualization.framework.' }
+    ? { value: 'vz', title: 'Dockiva Linux VM', desc: 'Run a minimal Linux guest with Apple Virtualization.framework.' }
     : props.platform?.os === 'windows'
       ? { value: 'wsl2', title: 'Dockiva Native', desc: 'Run the dedicated Dockiva engine with WSL2.' }
       : { value: 'native', title: 'Dockiva Native', desc: 'Use direct containerd in the dedicated dockiva namespace.' }
 
   return [
     native,
+    ...(props.platform?.os === "darwin" ? [{ value: "vmfree", title: "VM-free — Experimental", desc: "Test supported ARM64 images without a VM. Starts automatically when selected." }] : []),
     { value: 'external', title: 'External Docker', desc: 'Use the saved Docker Desktop, System Docker, rootless Docker, or custom endpoint.' },
   ]
 })
@@ -321,7 +322,7 @@ async function reconnectDocker() {
 }
 
 async function selectRuntime(provider: string) {
-  await chooseBackend(provider === 'docker' ? 'external' : nativeBackend.value)
+  await chooseBackend(provider === 'vmfree' ? 'vmfree' : provider === 'docker' ? 'external' : nativeBackend.value)
 }
 
 async function toggle(
@@ -472,7 +473,7 @@ onBeforeUnmount(() => {
           <div class="flex items-center gap-3">
             <span class="h-3 w-3 rounded-full" :class="status.running ? 'bg-emerald-500' : 'bg-zinc-600'" />
             <div>
-              <div class="font-medium">{{ status.running ? 'Engine running' : settings.engineBackend === 'external' ? 'External Docker offline' : 'Dockiva engine stopped' }}</div>
+              <div class="font-medium">{{ status.running ? 'Engine running' : settings.engineBackend === 'vmfree' ? 'VM-free engine offline' : settings.engineBackend === 'external' ? 'External Docker offline' : 'Dockiva engine stopped' }}</div>
               <div class="mt-0.5 text-xs text-zinc-500">{{ status.message }}</div>
               <div
                 v-if="settings.engineBackend === 'external' && dockerIdentity?.endpoint"
@@ -522,13 +523,13 @@ onBeforeUnmount(() => {
       </div>
 
       <div v-if="settings.engineBackend === 'vz' && status && !status.helperInstalled" class="mt-4 rounded-lg border border-amber-900/60 bg-amber-950/20 p-4 text-sm text-amber-300">
-        Build/install the native VMM helper and guest assets. See <code class="ml-2 rounded bg-black/30 px-2 py-1 font-mono text-xs">README-MILESTONE13.md</code>
+        Build/install the native VMM helper and guest assets. See <code class="ml-2 rounded bg-black/30 px-2 py-1 font-mono text-xs">docs/MILESTONES.md (Milestone 13)</code>
       </div>
 
       <div v-if="error" class="mt-4 whitespace-pre-wrap rounded-lg border border-red-900 bg-red-950/30 p-4 text-sm text-red-300">{{ error }}</div>
     </section>
 
-    <section v-if="settings.engineBackend !== 'external'" class="panel migration-panel p-6">
+    <section v-if="!['external', 'vmfree'].includes(settings.engineBackend)" class="panel migration-panel p-6">
       <div class="flex flex-wrap items-start justify-between gap-4">
         <div>
           <div class="flex items-center gap-2">
@@ -676,7 +677,7 @@ onBeforeUnmount(() => {
               @click="selectRuntime(candidate.provider)"
             >
               {{
-                busy === `backend:${candidate.provider === 'docker' ? 'external' : nativeBackend}`
+                busy === `backend:${candidate.provider === 'vmfree' ? 'vmfree' : candidate.provider === 'docker' ? 'external' : nativeBackend}`
                   ? 'Switching…'
                   : 'Use Runtime'
               }}

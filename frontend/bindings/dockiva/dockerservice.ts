@@ -273,6 +273,10 @@ export function StartDockerImageMigration(): $CancellablePromise<$models.DockerM
     return $Call.ByID(1698842324);
 }
 
+export function StartDockerMigrationSource(): $CancellablePromise<$models.DockerMigrationPreview> {
+    return $Call.ByID(1733132640);
+}
+
 /**
  * StartLogStream follows Docker logs until StopLogStream is called or the
  * container log stream ends. Output is emitted as "dockiva:log-output".

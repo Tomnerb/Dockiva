@@ -23,6 +23,9 @@ const (
 	maxBundledGuestDiskSize   = 8 << 30
 )
 
+// nativeVMReadyTimeout bounds how long Start waits for Docker inside the guest.
+var nativeVMReadyTimeout = 60 * time.Second
+
 type darwinEngineBackend struct{}
 
 func newPlatformEngineBackend() platformEngineBackend {
@@ -134,11 +137,11 @@ func (backend darwinEngineBackend) Start(
 
 	if !fileExists(kernel) || !fileExists(disk) {
 		return EngineActionResult{
-				Status: backend.Status(service, ""),
-			}, fmt.Errorf(
-				"macOS guest assets are missing; copy vmlinux and rootfs.ext4 into %s (see scripts/build-macos-guest-assets-linux.sh)",
-				guestDir,
-			)
+			Status: backend.Status(service, ""),
+		}, fmt.Errorf(
+			"macOS guest assets are missing; copy vmlinux and rootfs.ext4 into %s (see scripts/build-macos-guest-assets-linux.sh)",
+			guestDir,
+		)
 	}
 
 	stateDir, err := dockivaVMMStateDir()
@@ -149,13 +152,17 @@ func (backend darwinEngineBackend) Start(
 	}
 
 	if status := backend.Status(service, ""); status.Running {
-		if err := service.ConfigureNativeDockerEndpoint("unix://" + status.Endpoint); err != nil {
-			return EngineActionResult{Status: status}, err
+		if reachableDockerEndpoint("unix://" + status.Endpoint) {
+			if err := service.ConfigureNativeDockerEndpoint("unix://" + status.Endpoint); err != nil {
+				return EngineActionResult{Status: status}, err
+			}
+			if err := service.SelectContainerRuntime("docker"); err != nil {
+				return EngineActionResult{Status: status}, err
+			}
+			return EngineActionResult{Status: status}, nil
 		}
-		if err := service.SelectContainerRuntime("docker"); err != nil {
-			return EngineActionResult{Status: status}, err
-		}
-		return EngineActionResult{Status: status}, nil
+		// A VM whose Docker never answers (a guest that failed to boot) is replaced.
+		_, _ = runCommand(15*time.Second, "", helper, "stop", "--state-dir", stateDir)
 	}
 
 	if err := os.MkdirAll(stateDir, 0o755); err != nil {
@@ -178,8 +185,9 @@ func (backend darwinEngineBackend) Start(
 		}, err
 	}
 
+	logPath := filepath.Join(logDir, "vmm.log")
 	logFile, err := os.OpenFile(
-		filepath.Join(logDir, "vmm.log"),
+		logPath,
 		os.O_CREATE|os.O_APPEND|os.O_WRONLY,
 		0o644,
 	)
@@ -222,18 +230,28 @@ func (backend darwinEngineBackend) Start(
 		}, err
 	}
 
-	_ = cmd.Process.Release()
+	exited := make(chan error, 1)
+	go func() { exited <- cmd.Wait() }()
 
+	// The VMM creates docker.sock itself before the guest boots, so only an answer
+	// from Docker inside the guest means the engine is up.
 	proxySocket := filepath.Join(stateDir, "docker.sock")
-
 	var lastErr error
-	for attempt := 0; attempt < 60; attempt++ {
-		if fileExists(proxySocket) {
-			if err := service.ConfigureNativeDockerEndpoint("unix://" + proxySocket); err == nil {
-				if err := service.SelectContainerRuntime("docker"); err != nil {
-					lastErr = err
-					continue
-				}
+	for deadline := time.Now().Add(nativeVMReadyTimeout); time.Now().Before(deadline); {
+		select {
+		case err := <-exited:
+			return EngineActionResult{
+				Status: backend.Status(service, ""),
+			}, fmt.Errorf("native VM exited during startup (%v); see %s", err, logPath)
+		default:
+		}
+
+		if fileExists(proxySocket) && reachableDockerEndpoint("unix://"+proxySocket) {
+			if err := service.ConfigureNativeDockerEndpoint("unix://" + proxySocket); err != nil {
+				lastErr = err
+			} else if err := service.SelectContainerRuntime("docker"); err != nil {
+				lastErr = err
+			} else {
 				status := backend.Status(service, "")
 				status.Running = true
 				status.Endpoint = proxySocket
@@ -246,20 +264,25 @@ func (backend darwinEngineBackend) Start(
 						memoryMiB,
 					),
 				}, nil
-			} else {
-				lastErr = err
 			}
 		}
 
-		time.Sleep(250 * time.Millisecond)
+		time.Sleep(500 * time.Millisecond)
 	}
 
+	// A guest that never brings Docker up must not keep its vCPUs busy.
+	_, _ = runCommand(15*time.Second, "", helper, "stop", "--state-dir", stateDir)
+	if lastErr == nil {
+		lastErr = errors.New("Docker did not answer")
+	}
 	return EngineActionResult{
-			Status: backend.Status(service, ""),
-		}, fmt.Errorf(
-			"native VM started but containerd proxy did not become ready: %w",
-			lastErr,
-		)
+		Status: backend.Status(service, ""),
+	}, fmt.Errorf(
+		"native VM did not become ready within %s and was stopped (%w); see %s",
+		nativeVMReadyTimeout,
+		lastErr,
+		logPath,
+	)
 }
 
 func (backend darwinEngineBackend) Stop(
@@ -331,10 +354,10 @@ func (backend darwinEngineBackend) Provision(
 	option string,
 ) (EngineActionResult, error) {
 	return EngineActionResult{
-			Status: backend.Status(service, option),
-		}, errors.New(
-			"macOS native guest assets are prepared outside the running app; use scripts/build-macos-guest-assets-linux.sh and scripts/install-macos-native-assets.sh",
-		)
+		Status: backend.Status(service, option),
+	}, errors.New(
+		"macOS native guest assets are prepared outside the running app; use scripts/build-macos-guest-assets-linux.sh and scripts/install-macos-native-assets.sh",
+	)
 }
 
 func dockivaVMMPath() (string, error) {

@@ -225,6 +225,21 @@ if [[ "$RELEASE" == true ]]; then
       "$RESOURCES/dockiva-vmm"
   fi
 
+  # Notarization requires every nested executable to carry the Developer ID
+  # signature, hardened runtime and a timestamp. The native runtime also needs
+  # the Hypervisor.framework entitlement.
+  VMFREE_BUILD="$RESOURCES/vmfree-engine/_internal/build"
+  if [[ -d "$RESOURCES/vmfree-engine" ]]; then
+    for helper in "$RESOURCES/vmfree-engine/dockivad" "$RESOURCES/vmfree-engine/vmfree-engine" \
+                  "$VMFREE_BUILD/vmfree-c" "$VMFREE_BUILD/vmfree-worker"; do
+      codesign --force --options runtime --timestamp --sign "$SIGN_IDENTITY" "$helper"
+    done
+    if [[ -f "$VMFREE_BUILD/vmfree-c-hvf" ]]; then
+      codesign --force --options runtime --timestamp --sign "$SIGN_IDENTITY" \
+        --entitlements build/darwin/vmfree-hvf.entitlements.plist "$VMFREE_BUILD/vmfree-c-hvf"
+    fi
+  fi
+
   codesign \
     --force \
     --options runtime \

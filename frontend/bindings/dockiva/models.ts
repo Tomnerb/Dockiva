@@ -116,6 +116,9 @@ export interface DockerDiskUsageItem {
  */
 export interface DockerMigrationPreview {
     "available": boolean;
+    "reachable": boolean;
+    "volumeMigrationSupported": boolean;
+    "endpoint"?: string;
     "containers": number;
     "running": number;
     "images": number;

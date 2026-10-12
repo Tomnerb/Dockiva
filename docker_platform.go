@@ -717,6 +717,10 @@ func (s *DockerService) SelectComposeFolder() (string, error) {
 }
 
 func (s *DockerService) ImportComposePath(inputPath string) (ComposeImportResult, error) {
+	if _, ok := s.currentRuntime().(*vmfreeRuntime); ok {
+		return ComposeImportResult{}, errors.New("Compose unsupported by VM-free preview")
+	}
+
 	inputPath = strings.TrimSpace(inputPath)
 	if inputPath == "" {
 		return ComposeImportResult{}, errors.New("compose path is required")

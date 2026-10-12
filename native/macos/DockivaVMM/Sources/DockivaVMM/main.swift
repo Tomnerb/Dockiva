@@ -103,6 +103,37 @@ final class VMStopDelegate: NSObject, VZVirtualMachineDelegate {
     }
 }
 
+/// Forwards the guest console to stderr and reports a kernel panic: a panicked
+/// guest spins on its vCPUs, and a reboot (panic=N) only boots it again.
+final class ConsoleWatcher: @unchecked Sendable {
+    private let pipe = Pipe()
+    private let lock = NSLock()
+    private var tail = Data()
+    private var reported = false
+    var onPanic: (() -> Void)?
+
+    var writeHandle: FileHandle { pipe.fileHandleForWriting }
+
+    init() {
+        let marker = Data("Kernel panic - not syncing".utf8)
+        pipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
+            let data = handle.availableData
+            guard let self, !data.isEmpty else { return }
+            FileHandle.standardError.write(data)
+            self.lock.lock()
+            self.tail.append(data)
+            let found = !self.reported && self.tail.range(of: marker) != nil
+            if found { self.reported = true }
+            self.tail = self.tail.suffix(marker.count)       // a marker split across reads
+            self.lock.unlock()
+            if found {
+                fputs("\ndockiva-vmm: guest kernel panicked; stopping the VM\n", stderr)
+                self.onPanic?()
+            }
+        }
+    }
+}
+
 final class Relay: @unchecked Sendable {
     private let lock = NSLock()
     private var closed = false
@@ -330,6 +361,7 @@ final class VMRuntime {
 
     private var proxy: UnixProxyServer?
     private var dockerProxy: UnixProxyServer?
+    let console = ConsoleWatcher()
 
     init(args: Arguments) throws {
         self.args = args
@@ -430,7 +462,7 @@ final class VMRuntime {
         let serialPort = VZVirtioConsoleDeviceSerialPortConfiguration()
         serialPort.attachment = VZFileHandleSerialPortAttachment(
             fileHandleForReading: nil,
-            fileHandleForWriting: FileHandle.standardError
+            fileHandleForWriting: console.writeHandle
         )
         configuration.serialPorts = [serialPort]
 
@@ -644,6 +676,9 @@ func serve(args: Arguments) async throws {
     let semaphore = DispatchSemaphore(value: 0)
 
     runtime.delegate.onStop = {
+        semaphore.signal()
+    }
+    runtime.console.onPanic = {
         semaphore.signal()
     }
 

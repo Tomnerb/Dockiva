@@ -14,6 +14,18 @@ func (s *DockerService) AutoRecoverEngine(
 	startEngine bool,
 ) {
 	backend = normalizeEngineBackend(backend)
+	if backend == "vmfree" {
+		if startEngine {
+			r := newVMFreeRuntime()
+			defer r.Close()
+			if err := startVMFreeEngine(r); err != nil {
+				log.Printf("VM-free startup: %v", err)
+			} else {
+				s.emitEngineRecovered("vmfree-started")
+			}
+		}
+		return
+	}
 
 	if backend == "external" && autoReconnect {
 		if err := s.ReconnectExternalDocker(); err == nil {
