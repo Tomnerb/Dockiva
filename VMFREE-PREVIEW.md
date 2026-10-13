@@ -23,6 +23,12 @@ This section supersedes older capability statements further down the page.
   Unix-domain sockets (stream and datagram, `socketpair`) live as socket files
   in the container's root; passing descriptors (`SCM_RIGHTS`) and Linux
   abstract names are not supported yet. No IPv6 or raw sockets.
+- **Docker CLI.** The engine registers a `dockiva` Docker context (it never
+  switches the current one), served by `~/.vmfree/docker.sock`; access is limited
+  to your user by file permissions, as with Docker's own socket. After
+  `docker context use dockiva`, `docker run` (foreground or `-d`, `--rm`, `-p`,
+  `-e`), `logs -f`, `kill`, `wait`, `attach --no-stdin`, `events`, `ps`,
+  `inspect`, `pull` and `rm` work with the plain docker CLI.
 - **Containers.** Private writable root by default; TCP port publishing on
   `127.0.0.1` (`HostPort:ContainerPort`); `/dev/null`, `/dev/zero`, `/dev/urandom`;
   process trees with fork/exec, threads (native backend), epoll (including
@@ -128,9 +134,9 @@ without a Linux VM. The existing Linux VM and external Docker backends remain
 selectable with separate stores. Being the default does not expand compatibility
 or establish a production isolation boundary.
 
-Builds, arbitrary pulls, image deletion, terminal attach, streaming logs, volumes,
-bridge networking, DNS, port publishing, Compose, migration and resource statistics
-are unavailable for VM-free. M24+ execution modes are not enabled automatically
+Builds, image deletion, interactive terminals and standard input (`-i`/`-t`,
+`exec`), volumes and bind mounts, bridge networking, Compose, migration and
+resource statistics are unavailable for VM-free. M24+ execution modes are not enabled automatically
 through this API. M33 preview and M80 production acceptance gates remain open.
 No Docker Desktop RAM, CPU or battery savings have been established.
 
