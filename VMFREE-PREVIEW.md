@@ -60,27 +60,30 @@ This section supersedes older capability statements further down the page.
   running), so an exec failure reported through shared memory (glibc
   `posix_spawn`) is not seen by the parent. Hot system calls (socket and file
   reads and writes, `lseek`, `epoll_wait`, `mmap`/`munmap`, copy-on-write
-  faults) run without the
-  runtime's global lock; process switches only reload the page-table base and
+  faults) run without the runtime's global lock. When such a call would block
+  on sockets while other vCPUs are idle, the process waits for them itself for
+  up to 2 ms, still without the lock, so a server's next request skips the
+  scheduler. Process switches only reload the page-table base and
   descriptor-table pointers, and blocked processes wake on their own sockets,
   pipes, futexes and signals. `pgbench` against `postgres:16-alpine` (scale 1,
-  through the engine, 12 vCPUs) compared with the same image in an OrbStack VM
-  on the same Mac:
+  12 vCPUs) compared with the same image in an OrbStack VM on the same Mac:
 
   | Workload | Native | VM |
   |---|---|---|
-  | TPC-B, 1 client | 2,876 tps | 822 tps |
-  | TPC-B, 10 clients | 2,339 tps | 1,065 tps |
-  | TPC-B, 50 clients | 1,470 tps | 627 tps |
-  | Select-only, 10 clients | 35,005 tps | 44,607 tps |
-  | Select-only, 50 clients | 50,912 tps | 68,085 tps |
-  | New connection per transaction | 234 tps | 347 tps |
+  | TPC-B, 1 client | 2,313 tps | 822 tps |
+  | TPC-B, 10 clients | 3,467 tps | 1,065 tps |
+  | TPC-B, 50 clients | 2,158 tps | 627 tps |
+  | Select-only, 10 clients | 60,673 tps | 44,607 tps |
+  | Select-only, 50 clients | 60,720 tps | 68,085 tps |
+  | New connection per transaction | 345 tps | 347 tps |
 
   The write-heavy lead is not a durability-equivalent comparison: guest `fsync`
   maps to macOS `fsync`, which does not force a drive-cache flush
   (`F_FULLFSYNC`), and the VM's disk stack may flush differently. Connection
-  setup (a fork per client) costs more than in a VM because copy-on-write
-  snapshots rebuild page tables.
+  setup (a fork per client) now matches the VM with 10 clients: page tables after
+  a fork are updated region by region rather than rebuilt, buffered file reads
+  skip the runtime's global lock, and a path without symlinks opens with one host
+  call. Fork, exit and file opens still take that lock.
 - **Memory snapshots.** With several vCPUs touching pages at once, a write to
   the source of a Mach copy-on-write snapshot can show through in the
   snapshot (reproducible with Hypervisor.framework and `mach_vm_remap` alone,
@@ -144,7 +147,10 @@ python scripts/bundle_dockiva_engine.py --output /path/to/dockiva/bin
 
 Then build/package Dockiva normally. Its macOS packaging task copies
 `bin/vmfree-engine` into `Contents/Resources` before signing and fails if the helper
-is missing. Source builds can use the absolute `DOCKIVA_VMFREE_HELPER` override.
+is missing. Release builds do the same in CI: the macOS arm64 job checks out
+vmfree-runtime at the commit in `VMFREE_RUNTIME_REF` (using the
+`VMFREE_RUNTIME_TOKEN` secret, read access to that private repository) and
+bundles the engine before packaging; update the file to ship a newer runtime. Source builds can use the absolute `DOCKIVA_VMFREE_HELPER` override.
 This build-time Python dependency is not an end-user dependency. The bundle must
 be built and qualified for each supported macOS version; this initial local build
 has not established the older deployment targets advertised by Dockiva.
