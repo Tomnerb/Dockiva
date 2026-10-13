@@ -147,7 +147,10 @@ python scripts/bundle_dockiva_engine.py --output /path/to/dockiva/bin
 
 Then build/package Dockiva normally. Its macOS packaging task copies
 `bin/vmfree-engine` into `Contents/Resources` before signing and fails if the helper
-is missing. Source builds can use the absolute `DOCKIVA_VMFREE_HELPER` override.
+is missing. Release builds do the same in CI: the macOS arm64 job checks out
+vmfree-runtime at the commit in `VMFREE_RUNTIME_REF` (using the
+`VMFREE_RUNTIME_TOKEN` secret, read access to that private repository) and
+bundles the engine before packaging; update the file to ship a newer runtime. Source builds can use the absolute `DOCKIVA_VMFREE_HELPER` override.
 This build-time Python dependency is not an end-user dependency. The bundle must
 be built and qualified for each supported macOS version; this initial local build
 has not established the older deployment targets advertised by Dockiva.
