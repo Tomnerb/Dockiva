@@ -27,8 +27,15 @@ This section supersedes older capability statements further down the page.
   switches the current one), served by `~/.vmfree/docker.sock`; access is limited
   to your user by file permissions, as with Docker's own socket. After
   `docker context use dockiva`, `docker run` (foreground or `-d`, `--rm`, `-p`,
-  `-e`), `logs -f`, `kill`, `wait`, `attach --no-stdin`, `events`, `ps`,
-  `inspect`, `pull` and `rm` work with the plain docker CLI.
+  `-e`, `-v`, `--mount`, `--read-only`), `logs -f`, `kill`, `wait`,
+  `attach --no-stdin`, `events`, `ps`, `inspect`, `pull`, `rm` and
+  `docker volume` work with the plain docker CLI.
+- **Mounts and volumes.** `-v /host/path:/path[:ro]` binds a host directory or a
+  single file; `-v name:/path` and `-v /path` use named and anonymous volumes
+  stored in `~/.vmfree/volumes`. A new volume first receives the image's content
+  at its mount point, read-only mounts refuse writes, and symlinks or `..` inside
+  a mount cannot reach the rest of the Mac. Postgres keeps its data in a named
+  volume across container removal.
 - **Containers.** Private writable root by default; TCP port publishing on
   `127.0.0.1` (`HostPort:ContainerPort`); `/dev/null`, `/dev/zero`, `/dev/urandom`;
   process trees with fork/exec, threads (native backend), epoll (including
@@ -135,8 +142,8 @@ selectable with separate stores. Being the default does not expand compatibility
 or establish a production isolation boundary.
 
 Builds, image deletion, interactive terminals and standard input (`-i`/`-t`,
-`exec`), volumes and bind mounts, bridge networking, Compose, migration and
-resource statistics are unavailable for VM-free. M24+ execution modes are not enabled automatically
+`exec`), tmpfs mounts, bridge networking, Compose, migration and resource
+statistics are unavailable for VM-free. M24+ execution modes are not enabled automatically
 through this API. M33 preview and M80 production acceptance gates remain open.
 No Docker Desktop RAM, CPU or battery savings have been established.
 
