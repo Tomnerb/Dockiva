@@ -75,14 +75,15 @@ This section supersedes older capability statements further down the page.
   | TPC-B, 50 clients | 2,158 tps | 627 tps |
   | Select-only, 10 clients | 60,673 tps | 44,607 tps |
   | Select-only, 50 clients | 60,720 tps | 68,085 tps |
-  | New connection per transaction | 286 tps | 347 tps |
+  | New connection per transaction | 345 tps | 347 tps |
 
   The write-heavy lead is not a durability-equivalent comparison: guest `fsync`
   maps to macOS `fsync`, which does not force a drive-cache flush
   (`F_FULLFSYNC`), and the VM's disk stack may flush differently. Connection
-  setup (a fork per client) costs more than in a VM: page tables after a fork
-  are updated region by region rather than rebuilt, but fork, exit and file
-  opens still take the runtime's global lock.
+  setup (a fork per client) now matches the VM with 10 clients: page tables after
+  a fork are updated region by region rather than rebuilt, buffered file reads
+  skip the runtime's global lock, and a path without symlinks opens with one host
+  call. Fork, exit and file opens still take that lock.
 - **Memory snapshots.** With several vCPUs touching pages at once, a write to
   the source of a Mach copy-on-write snapshot can show through in the
   snapshot (reproducible with Hypervisor.framework and `mach_vm_remap` alone,
