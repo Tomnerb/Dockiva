@@ -195,9 +195,9 @@ if [[ ! -d "$SOURCE_APP" ]]; then
   echo "Expected Wails bundle was not created at $SOURCE_APP" >&2
   exit 1
 fi
+RESOURCES="$SOURCE_APP/Contents/Resources"   # also used by Docker-only (--external-only) release signing
 
 if [[ "$EXTERNAL_ONLY" == false ]]; then
-  RESOURCES="$SOURCE_APP/Contents/Resources"
   mkdir -p "$RESOURCES/guest"
 
   cp -f native/macos/DockivaVMM/.build/release/dockiva-vmm "$RESOURCES/dockiva-vmm"
