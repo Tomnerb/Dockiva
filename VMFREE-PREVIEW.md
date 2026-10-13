@@ -14,22 +14,36 @@ This section supersedes older capability statements further down the page.
   been removed. Inspect shows the choice in `DockivaCompatibility.Backend`.
 - **Images.** `linux/arm64` images can be pulled from registries (including Docker
   Hub). Symlinks, hardlinks, `#!` entrypoints, any `WorkingDir` and declared volumes
-  (as plain folders) are supported; images that set `User` are rejected.
-- **Networking.** Containers share the Mac's network: outbound IPv4 TCP and UDP
-  reach the internet, and DNS uses the Mac's IPv4 nameservers (written to
-  `/etc/resolv.conf` at each start, with `/etc/hosts` mapping the container name
-  and `host.docker.internal` to the shared loopback). Servers listening on
-  `0.0.0.0` stay on loopback; `NetworkMode: none` keeps a container on loopback.
+  (as anonymous volumes) are supported; an image's `USER` (or `docker run -u`)
+  is resolved from its `/etc/passwd` and `/etc/group`, and its `HEALTHCHECK` runs.
+- **Networking.** The default bridge and user networks (`docker network create`)
+  give each container an address in `10.89.N.0/24` and private ports: two
+  containers can both listen on 5432, and unpublished ports stay off the Mac.
+  On a user network (Compose's default) containers reach each other by name and
+  `--network-alias` through `/etc/hosts`; `host.docker.internal` is the Mac.
+  `--network host` shares the Mac's network (servers stay on its loopback);
+  `none` keeps a container to its own loopback. One network per container.
+  Outbound IPv4 TCP and UDP reach the internet, and DNS uses the Mac's IPv4
+  nameservers.
   Unix-domain sockets (stream and datagram, `socketpair`) live as socket files
   in the container's root; passing descriptors (`SCM_RIGHTS`) and Linux
   abstract names are not supported yet. No IPv6 or raw sockets.
 - **Docker CLI.** The engine registers a `dockiva` Docker context (it never
   switches the current one), served by `~/.vmfree/docker.sock`; access is limited
   to your user by file permissions, as with Docker's own socket. After
-  `docker context use dockiva`, `docker run` (foreground or `-d`, `--rm`, `-p`,
-  `-e`, `-v`, `--mount`, `--read-only`), `logs -f`, `kill`, `wait`,
-  `attach --no-stdin`, `events`, `ps`, `inspect`, `pull`, `rm` and
-  `docker volume` work with the plain docker CLI.
+  `docker context use dockiva`, `docker run` (foreground or `-d`, `-i`, `-t`,
+  `--rm`, `-p`, `-e`, `-u`, `-m`, `--cpus`, `-v`, `--mount`, `--read-only`,
+  `--network`, `--restart`, `--health-*`), `exec` (`-it`, `-u`, `-w`, `-e`, `-d`),
+  `attach`, `logs -f`, `kill`, `wait`, `events`, `ps`, `inspect`, `cp`, `stats`,
+  `pull`, `tag`, `rmi`, `rm`, `docker volume`, `docker network` and
+  `docker compose` (`up`, `down`, `ps`, `logs`, `exec`, `stop`, `start`,
+  `restart`, with healthchecks and `depends_on` conditions) work with the plain
+  docker CLI. `-t` gives a pseudo-terminal (line editing, ^C to the foreground
+  job, resizes). An `exec` is a second runtime on the container's root, mounts
+  and network, so it shares files, volumes, localhost ports and Unix sockets
+  (`psql`, `redis-cli`, shells) but cannot see or signal the container's own
+  processes. Restart policies and healthchecks are run by each container's
+  supervisor; `always` and `unless-stopped` containers start again with the engine.
 - **Mounts and volumes.** `-v /host/path:/path[:ro]` binds a host directory or a
   single file; `-v name:/path` and `-v /path` use named and anonymous volumes
   stored in `~/.vmfree/volumes`. A new volume first receives the image's content
@@ -55,10 +69,12 @@ This section supersedes older capability statements further down the page.
 - **Limits:** 64 live processes per container and 128 threads per process; up to
   1024 sockets, 1024 files and 509 pipe/epoll descriptors per process (guests see
   `RLIMIT_NOFILE` 4096), 64 pipes and 128 `signalfd`s per container, 4096 host
-  descriptors per container; 8 MiB stacks; 512 MiB memory budget per
-  container, charged as pages are first written (2 GiB of address space; `munmap`
-  and `MADV_DONTNEED` return memory); 8 running containers. Unpublished ports
-  remain reachable on the Mac's loopback. Files are capped at 4 GiB each; the
+  descriptors per container; 8 MiB stacks; a memory limit per container (`-m`,
+  6 MiB to 64 GiB; 512 MiB by default), charged as pages are first written and
+  reported by `free` and `/proc/meminfo` (2 GiB of address space per process;
+  `munmap` and `MADV_DONTNEED` return memory; a process over the limit is killed
+  with a fault rather than an OOM kill); 64 running containers
+  (`vmfree-engine --max-containers`). Files are capped at 4 GiB each; the
   Mac's disk is the only storage limit. Images up to 512 MiB packed, 1 GiB
   unpacked.
 - **Performance.** A container gets one vCPU per Mac CPU (`--cpus`, set by the
@@ -83,20 +99,22 @@ This section supersedes older capability statements further down the page.
 
   | Workload | Native | VM |
   |---|---|---|
-  | TPC-B, 1 client | 2,313 tps | 822 tps |
-  | TPC-B, 10 clients | 3,467 tps | 1,065 tps |
-  | TPC-B, 50 clients | 2,158 tps | 627 tps |
-  | Select-only, 10 clients | 60,673 tps | 44,607 tps |
-  | Select-only, 50 clients | 60,720 tps | 68,085 tps |
-  | New connection per transaction | 345 tps | 347 tps |
+  | TPC-B, 1 client | 2,213 tps | 822 tps |
+  | TPC-B, 10 clients | 3,824 tps | 1,065 tps |
+  | TPC-B, 50 clients | 2,588 tps | 627 tps |
+  | Select-only, 10 clients | 66,115 tps | 44,607 tps |
+  | Select-only, 50 clients | 67,083 tps | 68,085 tps |
+  | New connection per transaction, 10 clients | 615 tps | 347 tps |
 
   The write-heavy lead is not a durability-equivalent comparison: guest `fsync`
   maps to macOS `fsync`, which does not force a drive-cache flush
   (`F_FULLFSYNC`), and the VM's disk stack may flush differently. Connection
-  setup (a fork per client) now matches the VM with 10 clients: page tables after
-  a fork are updated region by region rather than rebuilt, buffered file reads
-  skip the runtime's global lock, and a path without symlinks opens with one host
-  call. Fork, exit and file opens still take that lock.
+  setup (a fork per client) beats the VM with 10 clients: page tables after a
+  fork are updated region by region without any lock, and file opens, `stat`,
+  writes and `fsync` skip the runtime's global lock (so a WAL flush no longer
+  stalls other vCPUs). TPC-B at scale 1 drops past 10 clients on any system:
+  every transaction updates the same branch row. Fork and exit still take the
+  global lock.
 - **Memory snapshots.** With several vCPUs touching pages at once, a write to
   the source of a Mach copy-on-write snapshot can show through in the
   snapshot (reproducible with Hypervisor.framework and `mach_vm_remap` alone,
@@ -141,9 +159,8 @@ without a Linux VM. The existing Linux VM and external Docker backends remain
 selectable with separate stores. Being the default does not expand compatibility
 or establish a production isolation boundary.
 
-Builds, image deletion, interactive terminals and standard input (`-i`/`-t`,
-`exec`), tmpfs mounts, bridge networking, Compose, migration and resource
-statistics are unavailable for VM-free. M24+ execution modes are not enabled automatically
+Builds, tmpfs mounts, more than one network per container and migration are
+unavailable for VM-free. M24+ execution modes are not enabled automatically
 through this API. M33 preview and M80 production acceptance gates remain open.
 No Docker Desktop RAM, CPU or battery savings have been established.
 
