@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"github.com/moby/moby/client"
-	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
 const (
@@ -123,12 +122,9 @@ func (s *DockerService) GetDockerMigrationStatus() DockerMigrationStatus {
 }
 
 func (s *DockerService) emitMigrationStatus(status DockerMigrationStatus) {
-	app := application.Get()
-	if app != nil {
-		// Wails can dispatch this while handling the RPC that starts migration.
-		// Never let a UI event hold the worker launch or image-transfer loop.
-		go app.Event.Emit(dockerMigrationStatusEvent, status)
-	}
+	// Wails can dispatch this while handling the RPC that starts migration.
+	// Never let a UI event hold the worker launch or image-transfer loop.
+	go emitEvent(dockerMigrationStatusEvent, status)
 }
 
 // StartDockerImageMigration starts a single tracked migration and returns

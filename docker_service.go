@@ -17,7 +17,6 @@ import (
 	"time"
 
 	"github.com/moby/moby/client"
-	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
 const (
@@ -1216,12 +1215,7 @@ func (s *DockerService) containerUsesTTY(containerID string) bool {
 }
 
 func (s *DockerService) emitStreamEvent(name string, event StreamOutputEvent) {
-	app := application.Get()
-	if app == nil {
-		return
-	}
-
-	app.Event.Emit(name, event)
+	emitEvent(name, event)
 }
 
 func newSessionID() (string, error) {

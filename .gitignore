@@ -24,3 +24,7 @@
 .env
 .env.*
 !.env.example
+
+# Native macOS front end (SwiftPM)
+/macos/.build/
+/macos/build/

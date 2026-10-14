@@ -654,17 +654,15 @@ func (s *DockerService) watchDockerEvents(ctx context.Context) {
 				continue
 			}
 
-			if app := application.Get(); app != nil {
-				app.Event.Emit(
-					dockerChangedEvent,
-					DockerEventNotice{
-						Type:   raw.Type,
-						Action: raw.Action,
-						ID:     raw.ID,
-						Time:   raw.Time,
-					},
-				)
-			}
+			emitEvent(
+				dockerChangedEvent,
+				DockerEventNotice{
+					Type:   raw.Type,
+					Action: raw.Action,
+					ID:     raw.ID,
+					Time:   raw.Time,
+				},
+			)
 		}
 
 		_ = cmd.Wait()

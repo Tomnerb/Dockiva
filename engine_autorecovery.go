@@ -3,8 +3,6 @@ package main
 import (
 	"log"
 	"strings"
-
-	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
 func (s *DockerService) AutoRecoverEngine(
@@ -60,12 +58,7 @@ func (s *DockerService) AutoRecoverEngine(
 func (s *DockerService) emitEngineRecovered(
 	action string,
 ) {
-	app := application.Get()
-	if app == nil {
-		return
-	}
-
-	app.Event.Emit(
+	emitEvent(
 		dockerChangedEvent,
 		DockerEventNotice{
 			Type:   "engine",
