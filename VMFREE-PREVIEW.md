@@ -2,7 +2,7 @@
 
 Production architecture is frozen in [baseline v1.0](docs/FINAL-ARCHITECTURE-V1.md). SwiftUI/AppKit and Go/C execution without Python are required migrations; this page describes the current Vue/Wails and bundled-Python preview. The runtime remains experimental. Valkey V0–V11 is the first major compatibility gate, PostgreSQL P0–P12 the second; both remain unaccepted. Existing Redis tests remain regression protection. Runtime semantics must use generic Linux state objects without named-application compatibility branches.
 
-## Current state (2026-10-12)
+## Current state (2026-10-14)
 
 This section supersedes older capability statements further down the page.
 
@@ -13,8 +13,10 @@ This section supersedes older capability statements further down the page.
   entitlement), the engine falls back to the interpreter. The Unicorn backend has
   been removed. Inspect shows the choice in `DockivaCompatibility.Backend`.
 - **Images.** `linux/arm64` images can be pulled from registries (including Docker
-  Hub). Symlinks, hardlinks, `#!` entrypoints, any `WorkingDir` and declared volumes
-  (as anonymous volumes) are supported; an image's `USER` (or `docker run -u`)
+  Hub), with OCI or Docker v2 manifests. Layers stream to disk and each image is
+  unpacked once; containers clone it (APFS `clonefile`), so image size is limited
+  only by the disk. Symlinks, hardlinks, `#!` entrypoints (also for `exec` and
+  healthchecks), any `WorkingDir` and declared volumes (as anonymous volumes) are supported; an image's `USER` (or `docker run -u`)
   is resolved from its `/etc/passwd` and `/etc/group`, and its `HEALTHCHECK` runs.
 - **Networking.** The default bridge and user networks (`docker network create`)
   give each container an address in `10.89.N.0/24` and private ports: two
@@ -26,8 +28,8 @@ This section supersedes older capability statements further down the page.
   Outbound IPv4 TCP and UDP reach the internet, and DNS uses the Mac's IPv4
   nameservers.
   Unix-domain sockets (stream and datagram, `socketpair`) live as socket files
-  in the container's root; passing descriptors (`SCM_RIGHTS`) and Linux
-  abstract names are not supported yet. No IPv6 or raw sockets.
+  in the container's root, and descriptors pass between processes (`SCM_RIGHTS`);
+  Linux abstract names are not supported yet. No IPv6 or raw sockets.
 - **Docker CLI.** The engine registers a `dockiva` Docker context (it never
   switches the current one), served by `~/.vmfree/docker.sock`; access is limited
   to your user by file permissions, as with Docker's own socket. After
@@ -54,6 +56,11 @@ This section supersedes older capability statements further down the page.
   `127.0.0.1` (`HostPort:ContainerPort`); `/dev/null`, `/dev/zero`, `/dev/urandom`;
   process trees with fork/exec, threads (native backend), epoll (including
   edge-triggered), user switching (`setpriv`, `su-exec`).
+- **Compatibility sweep:** 21 popular images start through `docker run` and answer
+  a client: nginx, httpd, caddy, traefik, memcached, node (Alpine and Debian, and
+  `npm`), python (Alpine and Debian), golang (`go build`), mariadb 11, mysql 8.4,
+  mongo 7, rabbitmq 3 (management), apache/kafka 3.8, eclipse-temurin 21 (default
+  and 2 GiB heaps), prometheus, grafana and elasticsearch 8.
 - **Verified stock images:** `alpine`, `busybox` (musl and glibc) and
   `redis:7-alpine` with its normal entrypoint, `BGSAVE` and `redis-benchmark`.
   On the native backend, Redis 7.4.11 passes the official unit test suite as an
@@ -64,19 +71,22 @@ This section supersedes older capability statements further down the page.
 - **Processes.** Signal handlers, `sigaltstack`, per-thread signal masks and
   thread-directed signals; `docker stop` sends the image's `StopSignal` to PID 1
   and kills after 10 s. Shared memory (`MAP_SHARED` anonymous and System V),
-  cross-process futexes, `signalfd`, `setsid`, `/proc/self/exe`, `/dev/fd/N`.
+  cross-process futexes, `signalfd`, `eventfd`, `timerfd`, `rt_sigtimedwait`
+  (tini), named pipes (`mkfifo`), `setsid`, `/proc/self/exe`, `/dev/fd/N`, and
+  `/proc` files for each process (`stat`, `statm`, `status`) and the container
+  (`cpuinfo`, `meminfo`, `mounts`).
   Descriptors take the lowest free number; unknown system calls return `ENOSYS`.
 - **Limits:** 64 live processes per container and 128 threads per process; up to
   1024 sockets, 1024 files and 509 pipe/epoll descriptors per process (guests see
   `RLIMIT_NOFILE` 4096), 64 pipes and 128 `signalfd`s per container, 4096 host
   descriptors per container; 8 MiB stacks; a memory limit per container (`-m`,
-  6 MiB to 64 GiB; 512 MiB by default), charged as pages are first written and
-  reported by `free` and `/proc/meminfo` (2 GiB of address space per process;
+  6 MiB to 64 GiB; 2 GiB by default), charged as pages are first written and
+  reported by `free` and `/proc/meminfo` (a 12 GiB mmap arena per process, with
+  larger `PROT_NONE` reservations such as MariaDB's buffer pool placed above it;
   `munmap` and `MADV_DONTNEED` return memory; a process over the limit is killed
   with a fault rather than an OOM kill); 64 running containers
   (`vmfree-engine --max-containers`). Files are capped at 4 GiB each; the
-  Mac's disk is the only storage limit. Images up to 512 MiB packed, 1 GiB
-  unpacked.
+  Mac's disk is the only storage limit. Executables up to 512 MiB.
 - **Performance.** A container gets one vCPU per Mac CPU (`--cpus`, set by the
   engine). Processes and the threads of one process run in parallel: every
   thread is scheduled on its own, sharing its process's page tables, and the
