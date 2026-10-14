@@ -8,7 +8,7 @@ final class AppModel {
     enum Phase: Equatable { case starting, ready, failed(String) }
 
     var phase: Phase = .starting
-    var section: SidebarItem? = .containers
+    var section: SidebarItem? = .overview
     var status: DockerStatus?
     var engine: EngineStatus?
     var settings: AppSettings?
@@ -28,9 +28,15 @@ final class AppModel {
     private var refreshQueued = false
 
     var runningCount: Int { containers.filter(\.isRunning).count }
+    var totalCPU: Double { stats.values.reduce(0) { $0 + $1.cpuPercent } }
+    var totalMemory: UInt64 { stats.values.reduce(0) { $0 + $1.memoryUsage } }
+    var imageBytes: Int64 { images.reduce(0) { $0 + $1.size } }
+
+    private var started = false
 
     func start() async {
-        guard core == nil else { return }
+        guard !started else { return }
+        started = true
         do {
             let process = try CoreProcess()
             self.process = process

@@ -1,41 +1,115 @@
+import AppKit
 import SwiftUI
+
+/// The frame shared by the resource screens: a feature header, an optional bar,
+/// then rows in a frosted card.
+struct ResourceScreen<Actions: View, Bar: View, Rows: View>: View {
+    let item: SidebarItem
+    let subtitle: String
+    let isEmpty: Bool
+    let emptyTitle: String
+    let emptyDetail: String
+    @ViewBuilder let actions: Actions
+    @ViewBuilder let bar: Bar
+    @ViewBuilder let rows: Rows
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                FeatureHeader(title: item.title, subtitle: subtitle, symbol: item.symbol, accent: item.accent) { actions }
+                bar
+                if isEmpty {
+                    EmptyStateCard(eyebrow: "NOTHING HERE YET", title: emptyTitle, detail: emptyDetail, symbol: item.symbol, accent: item.accent)
+                } else {
+                    LazyVStack(spacing: 4) { rows }
+                        .padding(10)
+                        .surface(cornerRadius: 20)
+                }
+            }
+            .padding(28)
+        }
+    }
+}
+
+/// A list row: icon tile, title and detail, trailing values, hover highlight.
+struct ResourceRow<Trailing: View>: View {
+    let symbol: String
+    let title: String
+    let detail: String
+    @ViewBuilder let trailing: Trailing
+    @Environment(\.dockivaAccent) private var accent
+    @State private var hovered = false
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: symbol)
+                .font(.system(size: 13, weight: .bold))
+                .foregroundStyle(accent)
+                .frame(width: 32, height: 32)
+                .background(accent.opacity(0.13), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.system(size: 14, weight: .semibold, design: .rounded)).lineLimit(1).truncationMode(.middle)
+                Text(detail).font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+            }
+            Spacer(minLength: 12)
+            trailing
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 9)
+        .background(hovered ? Color.white.opacity(0.055) : .clear, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .onHover { hovered = $0 }
+    }
+}
 
 struct ImagesView: View {
     @Environment(AppModel.self) private var model
-    @State private var selection: ImageInfo.ID?
     @State private var reference = ""
     @State private var pulling = false
+    @State private var search = ""
     @State private var output: String?
 
+    private var rows: [ImageInfo] {
+        search.isEmpty ? model.images : model.images.filter { $0.title.localizedCaseInsensitiveContains(search) || $0.shortId.contains(search) }
+    }
+
     var body: some View {
-        Table(model.images, selection: $selection) {
-            TableColumn("Image") { Text($0.title) }
-            TableColumn("ID", value: \.shortId).width(110)
-            TableColumn("Size") { Text($0.size.byteString).monospacedDigit() }.width(90)
-            TableColumn("Created") { Text(Date(timeIntervalSince1970: TimeInterval($0.created)), style: .relative) }.width(120)
-            TableColumn("In use") { Text($0.containers > 0 ? "\($0.containers)" : "—") }.width(60)
-        }
-        .contextMenu(forSelectionType: ImageInfo.ID.self) { ids in
-            Button("Remove", role: .destructive) { remove(ids) }
-            Button("Force remove", role: .destructive) { remove(ids, force: true) }
-        }
-        .safeAreaInset(edge: .top) {
-            HStack {
-                TextField("Pull an image, e.g. postgres:16-alpine", text: $reference)
-                    .textFieldStyle(.roundedBorder)
-                    .onSubmit(pull)
-                Button(pulling ? "Pulling…" : "Pull", action: pull).disabled(pulling || reference.trimmingCharacters(in: .whitespaces).isEmpty)
+        ResourceScreen(item: .images, subtitle: "\(model.images.count) images · \(model.imageBytes.byteString) on disk",
+                       isEmpty: model.images.isEmpty, emptyTitle: "No images",
+                       emptyDetail: "Pull one above, or run docker pull; images appear here with their size.") {
+            EmptyView()
+        } bar: {
+            HStack(spacing: 10) {
+                HStack(spacing: 8) {
+                    Image(systemName: "arrow.down.circle").foregroundStyle(.secondary)
+                    TextField("Pull an image, e.g. postgres:16-alpine", text: $reference).textFieldStyle(.plain).onSubmit(pull)
+                }
+                .padding(.horizontal, 11)
+                .padding(.vertical, 8)
+                .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                Button(action: pull) { Label(pulling ? "Pulling…" : "Pull", systemImage: "arrow.down") }
+                    .buttonStyle(PrimaryButtonStyle(color: SidebarItem.images.accent))
+                    .disabled(pulling || reference.trimmingCharacters(in: .whitespaces).isEmpty)
+                SearchField(prompt: "Filter", text: $search).frame(width: 200)
             }
-            .padding(10)
-            .background(.bar)
+        } rows: {
+            ForEach(rows) { image in
+                ResourceRow(symbol: "square.stack.3d.up.fill", title: image.title,
+                            detail: "\(image.shortId) · \(Date(timeIntervalSince1970: TimeInterval(image.created)).formatted(.relative(presentation: .named)))") {
+                    if image.containers > 0 {
+                        Text("in use").font(.caption2.weight(.bold)).padding(.horizontal, 7).padding(.vertical, 3)
+                            .background(DockivaPalette.running.opacity(0.18), in: Capsule())
+                    }
+                    Text(image.size.byteString).font(.callout.monospacedDigit()).foregroundStyle(.secondary).frame(width: 80, alignment: .trailing)
+                    Menu {
+                        Button("Copy name") { copy(image.title) }
+                        Button("Remove", role: .destructive) { Task { await model.perform("DockerService.RemoveImage", [image.id, false]) } }
+                        Button("Force remove", role: .destructive) { Task { await model.perform("DockerService.RemoveImage", [image.id, true]) } }
+                    } label: { Image(systemName: "ellipsis.circle") }
+                        .menuStyle(.borderlessButton).menuIndicator(.hidden).frame(width: 28)
+                }
+            }
         }
         .sheet(item: Binding(get: { output.map(OutputSheet.init) }, set: { if $0 == nil { output = nil } })) { $0 }
-        .toolbar {
-            Button(role: .destructive) { if let selection { remove([selection]) } } label: { Label("Remove", systemImage: "trash") }
-                .disabled(selection == nil)
-        }
-        .navigationTitle("Images")
-        .navigationSubtitle(model.images.reduce(0) { $0 + $1.size }.byteString)
     }
 
     private func pull() {
@@ -47,46 +121,35 @@ struct ImagesView: View {
             pulling = false
         }
     }
-
-    private func remove(_ ids: Set<ImageInfo.ID>, force: Bool = false) {
-        Task { for id in ids { await model.perform("DockerService.RemoveImage", [id, force]) } }
-    }
 }
 
 struct VolumesView: View {
     @Environment(AppModel.self) private var model
-    @State private var selection: VolumeInfo.ID?
     @State private var newName = ""
 
     var body: some View {
-        Table(model.volumes, selection: $selection) {
-            TableColumn("Name", value: \.name)
-            TableColumn("Driver", value: \.driver).width(80)
-            TableColumn("Mountpoint", value: \.mountpoint)
-        }
-        .contextMenu(forSelectionType: VolumeInfo.ID.self) { ids in
-            Button("Show in Finder") {
-                for id in ids {
-                    if let v = model.volumes.first(where: { $0.id == id }) {
-                        NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: v.mountpoint)
-                    }
+        ResourceScreen(item: .volumes, subtitle: "Data that outlives containers · \(model.volumes.count) volumes",
+                       isEmpty: model.volumes.isEmpty, emptyTitle: "No volumes",
+                       emptyDetail: "Create one here, or use -v name:/path with docker run.") {
+            EmptyView()
+        } bar: {
+            CreateBar(prompt: "New volume name", text: $newName, accent: SidebarItem.volumes.accent) {
+                let name = newName
+                Task { if await model.cliAction("DockerService.CreateVolume", [name, "local"]) != nil { newName = "" } }
+            }
+        } rows: {
+            ForEach(model.volumes) { volume in
+                ResourceRow(symbol: "externaldrive.fill", title: volume.name, detail: volume.mountpoint) {
+                    Button { NSWorkspace.shared.selectFile(nil, inFileViewerRootedAtPath: volume.mountpoint) } label: { Image(systemName: "folder") }
+                        .buttonStyle(.plain).help("Show in Finder")
+                    Menu {
+                        Button("Copy name") { copy(volume.name) }
+                        Button("Remove", role: .destructive) { Task { await model.perform("DockerService.RemoveVolume", [volume.name, false]) } }
+                    } label: { Image(systemName: "ellipsis.circle") }
+                        .menuStyle(.borderlessButton).menuIndicator(.hidden).frame(width: 28)
                 }
             }
-            Button("Remove", role: .destructive) { Task { for id in ids { await model.perform("DockerService.RemoveVolume", [id, false]) } } }
         }
-        .safeAreaInset(edge: .top) {
-            HStack {
-                TextField("New volume name", text: $newName).textFieldStyle(.roundedBorder)
-                Button("Create") {
-                    let name = newName
-                    Task { if await model.cliAction("DockerService.CreateVolume", [name, "local"]) != nil { newName = "" } }
-                }
-                .disabled(newName.isEmpty)
-            }
-            .padding(10)
-            .background(.bar)
-        }
-        .navigationTitle("Volumes")
     }
 }
 
@@ -95,86 +158,139 @@ struct NetworksView: View {
     @State private var newName = ""
 
     var body: some View {
-        Table(model.networks) {
-            TableColumn("Name", value: \.name)
-            TableColumn("ID", value: \.shortId).width(110)
-            TableColumn("Driver", value: \.driver).width(80)
-            TableColumn("Scope", value: \.scope).width(70)
-        }
-        .contextMenu(forSelectionType: NetworkInfo.ID.self) { ids in
-            Button("Remove", role: .destructive) { Task { for id in ids { await model.perform("DockerService.RemoveNetwork", [id]) } } }
-        }
-        .safeAreaInset(edge: .top) {
-            HStack {
-                TextField("New network name", text: $newName).textFieldStyle(.roundedBorder)
-                Button("Create") {
-                    let name = newName
-                    Task { if await model.cliAction("DockerService.CreateNetwork", [name, "bridge"]) != nil { newName = "" } }
-                }
-                .disabled(newName.isEmpty)
+        ResourceScreen(item: .networks, subtitle: "Containers on one network reach each other by name",
+                       isEmpty: model.networks.isEmpty, emptyTitle: "No networks",
+                       emptyDetail: "Create one here, or let docker compose make one per project.") {
+            EmptyView()
+        } bar: {
+            CreateBar(prompt: "New network name", text: $newName, accent: SidebarItem.networks.accent) {
+                let name = newName
+                Task { if await model.cliAction("DockerService.CreateNetwork", [name, "bridge"]) != nil { newName = "" } }
             }
-            .padding(10)
-            .background(.bar)
+        } rows: {
+            ForEach(model.networks) { network in
+                ResourceRow(symbol: "network", title: network.name, detail: "\(network.shortId) · \(network.driver) · \(network.scope)") {
+                    if network.internal {
+                        Text("internal").font(.caption2.weight(.bold)).padding(.horizontal, 7).padding(.vertical, 3)
+                            .background(Color.orange.opacity(0.18), in: Capsule())
+                    }
+                    Menu {
+                        Button("Copy name") { copy(network.name) }
+                        Button("Remove", role: .destructive) { Task { await model.perform("DockerService.RemoveNetwork", [network.id]) } }
+                    } label: { Image(systemName: "ellipsis.circle") }
+                        .menuStyle(.borderlessButton).menuIndicator(.hidden).frame(width: 28)
+                }
+            }
         }
-        .navigationTitle("Networks")
+    }
+}
+
+struct CreateBar: View {
+    let prompt: String
+    @Binding var text: String
+    let accent: Color
+    let create: () -> Void
+
+    var body: some View {
+        HStack(spacing: 10) {
+            HStack(spacing: 8) {
+                Image(systemName: "plus.circle").foregroundStyle(.secondary)
+                TextField(prompt, text: $text).textFieldStyle(.plain).onSubmit { if !text.isEmpty { create() } }
+            }
+            .padding(.horizontal, 11)
+            .padding(.vertical, 8)
+            .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            Button(action: create) { Label("Create", systemImage: "plus") }
+                .buttonStyle(PrimaryButtonStyle(color: accent))
+                .disabled(text.isEmpty)
+        }
     }
 }
 
 struct EngineView: View {
     @Environment(AppModel.self) private var model
+    private let accent = SidebarItem.engine.accent
+
+    private var running: Bool { model.engine?.running == true }
 
     var body: some View {
-        Form {
-            Section("Engine") {
-                LabeledContent("Backend", value: model.engine?.backend ?? model.settings?.engineBackend ?? "—")
-                LabeledContent("State") {
-                    Text(model.engine?.running == true ? "Running" : "Stopped")
-                        .foregroundStyle(model.engine?.running == true ? .green : .secondary)
-                }
-                if let endpoint = model.engine?.endpoint { LabeledContent("Endpoint", value: endpoint).textSelection(.enabled) }
-                if let message = model.engine?.message, !message.isEmpty { Text(message).font(.callout).foregroundStyle(.secondary) }
-                HStack {
-                    if model.engine?.running == true {
-                        Button("Stop engine") { Task { await model.engineAction(start: false) } }
-                    } else {
-                        Button("Start engine") { Task { await model.engineAction(start: true) } }.buttonStyle(.borderedProminent)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                FeatureHeader(title: "Engine", subtitle: model.engine?.message ?? "The Linux container engine behind Dockiva",
+                              symbol: SidebarItem.engine.symbol, accent: accent) {
+                    HStack(spacing: 8) {
+                        if model.engineBusy { ProgressView().controlSize(.small) }
+                        if running {
+                            Button { Task { await model.engineAction(start: false) } } label: { Label("Stop engine", systemImage: "stop.fill") }
+                                .buttonStyle(SecondaryButtonStyle())
+                        } else {
+                            Button { Task { await model.engineAction(start: true) } } label: { Label("Start engine", systemImage: "power") }
+                                .buttonStyle(PrimaryButtonStyle(color: accent))
+                        }
                     }
-                    if model.engineBusy { ProgressView().controlSize(.small) }
+                    .disabled(model.engineBusy || model.engine?.supported == false)
                 }
-                .disabled(model.engineBusy || model.engine?.supported == false)
-            }
-            Section("Docker") {
-                LabeledContent("Connected", value: model.status?.connected == true ? "Yes" : "No")
-                if let api = model.status?.apiVersion, !api.isEmpty { LabeledContent("API version", value: api) }
-                if let error = model.status?.error, !error.isEmpty { Text(error).font(.callout).foregroundStyle(.red) }
-                if let endpoint = model.engine?.endpoint {
-                    LabeledContent("Use from a terminal") {
-                        Text("export DOCKER_HOST=\(endpoint)").font(.system(.caption, design: .monospaced)).textSelection(.enabled)
-                    }
+                HStack(spacing: 14) {
+                    MetricCard(title: "State", value: running ? "Running" : "Stopped", symbol: running ? "checkmark.circle.fill" : "pause.circle",
+                               subtitle: model.status?.connected == true ? "Docker API reachable" : "Docker API not reachable")
+                    MetricCard(title: "Backend", value: (model.engine?.backend ?? model.settings?.engineBackend ?? "—").capitalized,
+                               symbol: "bolt.horizontal.circle", subtitle: model.engine?.platform ?? "")
+                    MetricCard(title: "API", value: model.status?.apiVersion.isEmpty == false ? model.status!.apiVersion : "—",
+                               symbol: "chevron.left.forwardslash.chevron.right", subtitle: "Docker Engine API version")
                 }
+                if let endpoint = model.engine?.endpoint { terminalCard(endpoint) }
+                settingsCard
             }
+            .padding(28)
         }
-        .formStyle(.grouped)
-        .navigationTitle("Engine")
         .task { await model.refreshEngine() }
+    }
+
+    private func terminalCard(_ endpoint: String) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            SectionTitle(title: "Use it from a terminal", detail: "The docker CLI and Compose talk to this engine", symbol: "terminal")
+            HStack {
+                Text("export DOCKER_HOST=\(endpoint)")
+                    .font(.system(.callout, design: .monospaced))
+                    .textSelection(.enabled)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Spacer()
+                Button { copy("export DOCKER_HOST=\(endpoint)") } label: { Label("Copy", systemImage: "doc.on.doc") }
+                    .buttonStyle(SecondaryButtonStyle())
+            }
+            .padding(12)
+            .background(.black.opacity(0.3), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(20)
+        .surface(cornerRadius: 20)
+    }
+
+    private var settingsCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            SectionTitle(title: "Startup", detail: "How Dockiva treats the engine when it opens", symbol: "gearshape")
+            SettingsToggles()
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(20)
+        .surface(cornerRadius: 20)
     }
 }
 
-struct SettingsView: View {
+struct SettingsToggles: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
-        Form {
-            if let settings = model.settings {
+        if let settings = model.settings {
+            VStack(alignment: .leading, spacing: 10) {
                 Toggle("Start the engine when Dockiva opens", isOn: binding(settings, \.startEngineOnLaunch))
                 Toggle("Reconnect to the engine automatically", isOn: binding(settings, \.autoReconnectEngine))
-                LabeledContent("Engine backend", value: settings.engineBackend)
-            } else {
-                ProgressView()
             }
+            .toggleStyle(.switch)
+        } else {
+            ProgressView()
         }
-        .formStyle(.grouped)
-        .padding()
     }
 
     private func binding(_ settings: AppSettings, _ key: WritableKeyPath<AppSettings, Bool>) -> Binding<Bool> {
@@ -183,6 +299,14 @@ struct SettingsView: View {
             next[keyPath: key] = value
             Task { await model.updateSettings(next) }
         })
+    }
+}
+
+struct SettingsView: View {
+    var body: some View {
+        Form { SettingsToggles() }
+            .formStyle(.grouped)
+            .padding()
     }
 }
 
@@ -202,4 +326,9 @@ struct OutputSheet: View, Identifiable {
         .padding()
         .frame(width: 560, height: 360)
     }
+}
+
+func copy(_ text: String) {
+    NSPasteboard.general.clearContents()
+    NSPasteboard.general.setString(text, forType: .string)
 }

@@ -5,156 +5,260 @@ struct ContainersView: View {
     @Environment(AppModel.self) private var model
     @State private var selection: ContainerInfo.ID?
     @State private var search = ""
-    @State private var inspector = false
+    @State private var filter = "all"
+    @State private var hovered: ContainerInfo.ID?
+
+    private let accent = SidebarItem.containers.accent
 
     private var rows: [ContainerInfo] {
-        guard !search.isEmpty else { return model.containers }
-        return model.containers.filter {
-            $0.name.localizedCaseInsensitiveContains(search) || $0.image.localizedCaseInsensitiveContains(search)
-                || ($0.composeProject ?? "").localizedCaseInsensitiveContains(search)
+        model.containers.filter { c in
+            (filter == "all" || (filter == "running") == c.isRunning)
+                && (search.isEmpty || c.name.localizedCaseInsensitiveContains(search) || c.image.localizedCaseInsensitiveContains(search)
+                    || (c.composeProject ?? "").localizedCaseInsensitiveContains(search))
+        }
+    }
+
+    /// Rows grouped by Compose project; standalone containers last.
+    private var groups: [(project: String?, items: [ContainerInfo])] {
+        let grouped = Dictionary(grouping: rows) { $0.composeProject }
+        return grouped.keys.sorted { ($0 ?? "\u{10FFFF}") < ($1 ?? "\u{10FFFF}") }.map { key in
+            (key, grouped[key]!.sorted { ($0.isRunning ? 0 : 1, $0.name) < ($1.isRunning ? 0 : 1, $1.name) })
         }
     }
 
     private var selected: ContainerInfo? { model.containers.first { $0.id == selection } }
 
     var body: some View {
-        Table(rows, selection: $selection) {
-            TableColumn("Name") { c in nameCell(c) }.width(min: 110, ideal: 220)
-            TableColumn("Image") { c in Text(c.image).lineLimit(1).truncationMode(.middle) }.width(min: 70, ideal: 180)
-            TableColumn("Status") { c in Text(c.status).lineLimit(1) }.width(min: 60, ideal: 130)
-            TableColumn("CPU") { c in Text(cpu(c)).monospacedDigit() }.width(56)
-            TableColumn("Memory") { c in Text(memory(c)).monospacedDigit() }.width(76)
-            TableColumn("Ports") { c in portsCell(c) }.width(min: 60, ideal: 150)
-        }
-        .contextMenu(forSelectionType: ContainerInfo.ID.self) { ids in
-            if let c = model.containers.first(where: { ids.contains($0.id) }) { actions(for: c) }
-        }
-        .searchable(text: $search, prompt: "Filter containers")
-        .onChange(of: selection) { if selection != nil { inspector = true } }
-        .overlay {
-            if model.containers.isEmpty {
-                ContentUnavailableView("No containers", systemImage: "shippingbox", description: Text("Run one with docker run, or start the engine."))
-            }
-        }
-        .toolbar { toolbar }
-        .inspector(isPresented: $inspector) {
+        HStack(spacing: 0) {
+            listPanel
+                .frame(width: 330)
+                .frame(maxHeight: .infinity, alignment: .top)
+                .background(.thinMaterial)
+            Rectangle().fill(.white.opacity(0.07)).frame(width: 1)
             Group {
                 if let c = selected {
-                    ContainerInspector(container: c).id(c.id)
+                    ContainerDetail(container: c).id(c.id)
                 } else {
-                    ContentUnavailableView("Select a container", systemImage: "sidebar.trailing")
+                    ScrollView {
+                        EmptyStateCard(eyebrow: "PICK ONE", title: model.containers.isEmpty ? "No containers yet" : "Select a container",
+                                       detail: model.containers.isEmpty
+                                           ? "Run one with docker run or docker compose up; it shows up here right away."
+                                           : "See its live usage, logs and a terminal, and start, stop or remove it.",
+                                       symbol: "shippingbox.fill", accent: accent)
+                            .padding(28)
+                    }
                 }
             }
-            .inspectorColumnWidth(min: 260, ideal: 360, max: 900)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .navigationTitle("Containers")
-        .navigationSubtitle("\(model.runningCount) running")
+        .onAppear { if selection == nil { selection = model.containers.first(where: \.isRunning)?.id } }
     }
 
-    @ToolbarContentBuilder private var toolbar: some ToolbarContent {
-        ToolbarItemGroup {
-            if let c = selected {
-                containerButtons(c).disabled(model.busy.contains(c.id))
-            }
-            Button { inspector.toggle() } label: { Label("Inspector", systemImage: "sidebar.trailing") }
-        }
-    }
-
-    @ViewBuilder private func containerButtons(_ c: ContainerInfo) -> some View {
-        if c.isRunning {
-            Button { act("stop", c) } label: { Label("Stop", systemImage: "stop.fill") }
-            Button { act("restart", c) } label: { Label("Restart", systemImage: "arrow.clockwise") }
-        } else {
-            Button { act("start", c) } label: { Label("Start", systemImage: "play.fill") }
-        }
-        Button(role: .destructive) { act("remove", c) } label: { Label("Remove", systemImage: "trash") }
-    }
-
-    private func act(_ action: String, _ c: ContainerInfo) {
-        Task { await model.containerAction(action, c) }
-    }
-
-    private func cpu(_ c: ContainerInfo) -> String {
-        guard let stats = model.stats[c.id] else { return "—" }
-        return String(format: "%.1f%%", stats.cpuPercent)
-    }
-
-    private func memory(_ c: ContainerInfo) -> String {
-        model.stats[c.id]?.memoryUsage.byteString ?? "—"
-    }
-
-    private func nameCell(_ c: ContainerInfo) -> some View {
-        HStack(spacing: 6) {
-            Circle().fill(c.isRunning ? Color.green : Color.secondary.opacity(0.5)).frame(width: 8, height: 8)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(c.name).lineLimit(1)
-                if let project = c.composeProject { Text(project).font(.caption).foregroundStyle(.secondary) }
-            }
-        }
-    }
-
-    /// The first published port (a link when it has a URL), and how many more.
-    @ViewBuilder private func portsCell(_ c: ContainerInfo) -> some View {
-        let ports = (c.ports ?? []).filter { $0.publicPort > 0 }
-        if let first = ports.first {
-            HStack(spacing: 4) {
-                if let url = first.url.flatMap(URL.init(string:)) {
-                    Link(first.display, destination: url).lineLimit(1)
-                } else {
-                    Text(first.display).lineLimit(1)
+    private var listPanel: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 12) {
+                Image(systemName: "shippingbox.fill")
+                    .font(.title3)
+                    .foregroundStyle(.white)
+                    .frame(width: 40, height: 40)
+                    .background(accent, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .shadow(color: accent.opacity(0.3), radius: 10, y: 4)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Containers").font(.title2.bold())
+                    Text("\(model.runningCount) running · \(model.containers.count) total").font(.caption).foregroundStyle(.secondary)
                 }
-                if ports.count > 1 { Text("+\(ports.count - 1)").foregroundStyle(.secondary) }
             }
-            .help(ports.map(\.display).joined(separator: "\n"))
+            .padding(.top, 14)
+            SearchField(prompt: "Search containers", text: $search)
+            FilterPills(choices: [("All", "all"), ("Running", "running"), ("Stopped", "stopped")], selection: $filter)
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 4) {
+                    ForEach(groups, id: \.project) { group in
+                        if let project = group.project {
+                            Label(project, systemImage: "square.stack.3d.forward.dottedline")
+                                .font(.caption.weight(.bold))
+                                .foregroundStyle(.secondary)
+                                .padding(.top, 8)
+                                .padding(.leading, 4)
+                        } else if groups.count > 1 {
+                            Text("Standalone").font(.caption.weight(.bold)).foregroundStyle(.secondary).padding(.top, 8).padding(.leading, 4)
+                        }
+                        ForEach(group.items) { row($0) }
+                    }
+                }
+                .padding(.vertical, 3)
+            }
+            .scrollIndicators(.hidden)
+            .overlay {
+                if rows.isEmpty && !model.containers.isEmpty {
+                    Text("No matching containers").font(.subheadline).foregroundStyle(.secondary).padding(.top, 30)
+                }
+            }
         }
+        .padding(.horizontal, 18)
+        .padding(.bottom, 12)
     }
 
-    @ViewBuilder private func actions(for c: ContainerInfo) -> some View {
-        if c.isRunning {
-            Button("Stop") { Task { await model.containerAction("stop", c) } }
-            Button("Restart") { Task { await model.containerAction("restart", c) } }
-        } else {
-            Button("Start") { Task { await model.containerAction("start", c) } }
+    private func row(_ c: ContainerInfo) -> some View {
+        let isSelected = selection == c.id
+        return Button { selection = c.id } label: {
+            HStack(spacing: 10) {
+                StatusDot(running: c.isRunning)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(c.composeService ?? c.name).font(.system(size: 13, weight: .semibold, design: .rounded)).lineLimit(1)
+                    Text(c.image).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                }
+                Spacer(minLength: 4)
+                if model.busy.contains(c.id) {
+                    ProgressView().controlSize(.small)
+                } else if let stats = model.stats[c.id], c.isRunning {
+                    VStack(alignment: .trailing, spacing: 1) {
+                        Text(String(format: "%.1f%%", stats.cpuPercent)).font(.caption.monospacedDigit())
+                        Text(stats.memoryUsage.byteString).font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .background {
+                RoundedRectangle(cornerRadius: 11, style: .continuous)
+                    .fill(isSelected ? accent.opacity(0.22) : hovered == c.id ? Color.white.opacity(0.06) : .clear)
+                    .overlay(RoundedRectangle(cornerRadius: 11, style: .continuous).stroke(isSelected ? accent.opacity(0.5) : .clear))
+            }
+            .contentShape(Rectangle())
         }
-        Button("Copy ID") {
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(c.id, forType: .string)
-        }
-        Divider()
-        Button("Remove", role: .destructive) { Task { await model.containerAction("remove", c) } }
+        .buttonStyle(.plain)
+        .onHover { hovered = $0 ? c.id : (hovered == c.id ? nil : hovered) }
+        .contextMenu { ContainerMenu(container: c) }
     }
 }
 
-struct ContainerInspector: View {
+struct ContainerMenu: View {
     let container: ContainerInfo
-    @State private var tab = "Logs"
+    @Environment(AppModel.self) private var model
 
     var body: some View {
-        VStack(spacing: 0) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(container.name).font(.headline)
-                Text(container.image).font(.caption).foregroundStyle(.secondary)
-                if let ip = container.ipAddress, !ip.isEmpty { Text("IP \(ip)").font(.caption).foregroundStyle(.secondary) }
+        if container.isRunning {
+            Button("Stop") { Task { await model.containerAction("stop", container) } }
+            Button("Restart") { Task { await model.containerAction("restart", container) } }
+        } else {
+            Button("Start") { Task { await model.containerAction("start", container) } }
+        }
+        Button("Copy ID") {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(container.id, forType: .string)
+        }
+        Divider()
+        Button("Remove", role: .destructive) { Task { await model.containerAction("remove", container) } }
+    }
+}
+
+struct ContainerDetail: View {
+    let container: ContainerInfo
+    @Environment(AppModel.self) private var model
+    @State private var tab = "logs"
+    @State private var confirmRemove = false
+
+    private let accent = SidebarItem.containers.accent
+    private var stats: ContainerResourceStats? { model.stats[container.id] }
+    private var busy: Bool { model.busy.contains(container.id) }
+    private var published: [PortInfo] { (container.ports ?? []).filter { $0.publicPort > 0 } }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            FeatureHeader(title: container.name, subtitle: subtitle, symbol: container.isRunning ? "shippingbox.fill" : "shippingbox", accent: accent) {
+                EmptyView()
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(12)
-            Picker("", selection: $tab) {
-                Text("Logs").tag("Logs")
-                Text("Terminal").tag("Terminal")
+            HStack(spacing: 8) {
+                actions
+                Spacer(minLength: 12)
+                ports
             }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .padding(.horizontal, 12)
-            .padding(.bottom, 8)
-            Divider()
-            if tab == "Logs" {
-                LogsView(containerID: container.id)
-            } else if container.isRunning {
-                TerminalView(containerID: container.id)
+            HStack(spacing: 14) {
+                MetricCard(title: "CPU", value: stats.map { String(format: "%.1f%%", $0.cpuPercent) } ?? "—", symbol: "cpu",
+                           subtitle: container.isRunning ? "Of one core = 100%" : "Not running")
+                MetricCard(title: "Memory", value: stats?.memoryUsage.byteString ?? "—", symbol: "memorychip",
+                           subtitle: stats.map { $0.memoryLimit > 0 ? "Limit \($0.memoryLimit.byteString)" : "No limit" } ?? "Not running",
+                           progress: stats.flatMap { $0.memoryLimit > 0 ? Double($0.memoryUsage) / Double($0.memoryLimit) : nil })
+                MetricCard(title: "PIDs", value: stats.map { "\($0.pids)" } ?? "—", symbol: "list.number",
+                           subtitle: container.status)
+            }
+            console
+        }
+        .padding(28)
+        .confirmationDialog("Remove \(container.name)?", isPresented: $confirmRemove, titleVisibility: .visible) {
+            Button("Remove", role: .destructive) { Task { await model.containerAction("remove", container) } }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text(container.isRunning ? "The container is running; it will be stopped and removed. Its anonymous volumes are kept." : "Its anonymous volumes are kept.")
+        }
+    }
+
+    private var subtitle: String {
+        var parts = [container.image]
+        if let project = container.composeProject { parts.append("Compose: \(project)") }
+        if let ip = container.ipAddress, !ip.isEmpty { parts.append(ip) }
+        return parts.joined(separator: "  ·  ")
+    }
+
+    private var actions: some View {
+        HStack(spacing: 8) {
+            if busy { ProgressView().controlSize(.small) }
+            if container.isRunning {
+                Button { act("restart") } label: { Label("Restart", systemImage: "arrow.clockwise") }.buttonStyle(SecondaryButtonStyle())
+                Button { act("stop") } label: { Label("Stop", systemImage: "stop.fill") }.buttonStyle(PrimaryButtonStyle(color: .orange))
             } else {
-                ContentUnavailableView("Container is stopped", systemImage: "terminal", description: Text("Start it to open a terminal."))
+                Button { act("start") } label: { Label("Start", systemImage: "play.fill") }.buttonStyle(PrimaryButtonStyle(color: accent))
+            }
+            Button { confirmRemove = true } label: { Image(systemName: "trash") }
+                .buttonStyle(SecondaryButtonStyle(destructive: true))
+                .help("Remove")
+        }
+        .disabled(busy)
+    }
+
+    private func act(_ action: String) { Task { await model.containerAction(action, container) } }
+
+    private var ports: some View {
+        HStack(spacing: 8) {
+            ForEach(published.prefix(3), id: \.self) { port in
+                if let url = port.url.flatMap(URL.init(string:)) {
+                    Button { NSWorkspace.shared.open(url) } label: {
+                        Label(port.display, systemImage: "arrow.up.right.square").font(.caption.weight(.semibold))
+                    }
+                    .buttonStyle(SecondaryButtonStyle())
+                } else {
+                    Text(port.display).font(.caption.monospacedDigit()).padding(.horizontal, 10).padding(.vertical, 6).insetSurface(cornerRadius: 9)
+                }
             }
         }
+        .fixedSize()
+    }
+
+    private var console: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                SectionTitle(title: tab == "logs" ? "Logs" : "Terminal",
+                             detail: tab == "logs" ? "Live output, last 500 lines" : "A shell inside the container",
+                             symbol: tab == "logs" ? "text.alignleft" : "terminal")
+                Spacer()
+                FilterPills(choices: [("Logs", "logs"), ("Terminal", "terminal")], selection: $tab)
+            }
+            Group {
+                if tab == "logs" {
+                    LogsView(containerID: container.id)
+                } else if container.isRunning {
+                    TerminalView(containerID: container.id)
+                } else {
+                    Text("Start the container to open a terminal.").font(.callout).foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        }
+        .padding(18)
+        .frame(maxHeight: .infinity)
+        .surface(cornerRadius: 20)
     }
 }
 
@@ -193,7 +297,7 @@ struct StreamTextView: View {
             .onChange(of: text) { proxy.scrollTo("end", anchor: .bottom) }
             .onAppear { proxy.scrollTo("end", anchor: .bottom) }
         }
-        .background(Color(nsColor: .textBackgroundColor))
+        .background(Color.black.opacity(0.35))
     }
 }
 
