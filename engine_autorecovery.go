@@ -17,7 +17,7 @@ func (s *DockerService) AutoRecoverEngine(
 			r := newVMFreeRuntime()
 			defer r.Close()
 			if err := startVMFreeEngine(r); err != nil {
-				log.Printf("VM-free startup: %v", err)
+				log.Printf("Dockiva Engine startup: %v", err)
 			} else {
 				s.emitEngineRecovered("vmfree-started")
 			}

@@ -11,8 +11,8 @@
 /build/.swift-module-cache/
 /build/.generated/
 
-# Separate repository (github.com/Tomnerb/vmfree-runtime), checked out here for builds
-/vmfree-runtime/
+# Separate repository (github.com/Tomnerb/dockiva-engine), checked out here for builds
+/dockiva-engine/
 
 # Frontend dependencies and temporary bindings
 /frontend/node_modules/

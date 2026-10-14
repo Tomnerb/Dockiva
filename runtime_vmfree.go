@@ -18,25 +18,40 @@ import (
 	"time"
 )
 
-// VM-free has its own transport: never consult Docker contexts or fall back to Docker.
+// Dockiva Engine (the VM-free runtime) has its own transport: never consult Docker
+// contexts or fall back to Docker. The type keeps the engine's original name, as do
+// the "vmfree" backend and provider values stored in settings.
 type vmfreeRuntime struct {
 	home string
 	http *http.Client
 }
 
-func newVMFreeRuntime() *vmfreeRuntime {
-	home := os.Getenv("VMFREE_HOME")
-	if home == "" {
-		userHome, _ := os.UserHomeDir()
-		home = filepath.Join(userHome, ".vmfree")
+func newVMFreeRuntime() *vmfreeRuntime { return vmfreeAt(engineHome()) }
+
+// engineHome is the engine's state directory: ~/.dockiva-engine, or ~/.vmfree from
+// before the rename until startVMFreeEngine moves it (migrateLegacyHome).
+func engineHome() string {
+	for _, name := range []string{"DOCKIVA_ENGINE_HOME", "VMFREE_HOME"} {
+		if home := os.Getenv(name); home != "" {
+			return home
+		}
 	}
-	return vmfreeAt(home)
+	userHome, _ := os.UserHomeDir()
+	current, legacy := filepath.Join(userHome, ".dockiva-engine"), filepath.Join(userHome, ".vmfree")
+	if _, err := os.Lstat(current); err != nil {
+		if st, err := os.Lstat(legacy); err == nil && st.IsDir() { // a real directory, not the compatibility link
+			return legacy
+		}
+	}
+	return current
 }
 func vmfreeAt(home string) *vmfreeRuntime {
 	transport := &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
 		return (&net.Dialer{Timeout: 3 * time.Second}).DialContext(ctx, "unix", filepath.Join(home, "engine.sock"))
 	}}
-	return &vmfreeRuntime{home: home, http: &http.Client{Transport: transport, CheckRedirect: func(*http.Request, []*http.Request) error { return errors.New("VM-free redirects are unsupported") }}}
+	return &vmfreeRuntime{home: home, http: &http.Client{Transport: transport, CheckRedirect: func(*http.Request, []*http.Request) error {
+		return errors.New("Dockiva Engine redirects are unsupported")
+	}}}
 }
 func (r *vmfreeRuntime) Close() error { r.http.CloseIdleConnections(); return nil }
 func (r *vmfreeRuntime) request(ctx context.Context, method, path string, body any) ([]byte, error) {
@@ -50,7 +65,7 @@ func (r *vmfreeRuntime) request(ctx context.Context, method, path string, body a
 	// Read the token on each request so an engine restart does not require restarting Dockiva.
 	data, err := os.ReadFile(filepath.Join(r.home, "docker-client", "config.json"))
 	if err != nil {
-		return nil, fmt.Errorf("VM-free engine is not ready: %w", err)
+		return nil, fmt.Errorf("Dockiva Engine is not ready: %w", err)
 	}
 	var config struct{ HttpHeaders map[string]string }
 	if err = json.Unmarshal(data, &config); err != nil {
@@ -58,7 +73,7 @@ func (r *vmfreeRuntime) request(ctx context.Context, method, path string, body a
 	}
 	token := config.HttpHeaders["X-VMFree-Token"]
 	if len(token) != 64 {
-		return nil, errors.New("invalid VM-free authentication configuration")
+		return nil, errors.New("invalid Dockiva Engine authentication configuration")
 	}
 	var payload []byte
 	if body != nil {
@@ -83,17 +98,17 @@ func (r *vmfreeRuntime) request(ctx context.Context, method, path string, body a
 		return nil, err
 	}
 	if len(data) > 16*1024*1024 {
-		return nil, errors.New("VM-free response exceeds 16 MiB")
+		return nil, errors.New("Dockiva Engine response exceeds 16 MiB")
 	}
 	if resp.StatusCode >= 300 {
 		var failure struct{ Message string }
 		_ = json.Unmarshal(data, &failure)
-		return nil, fmt.Errorf("VM-free HTTP %d: %s", resp.StatusCode, failure.Message)
+		return nil, fmt.Errorf("Dockiva Engine HTTP %d: %s", resp.StatusCode, failure.Message)
 	}
 	return data, nil
 }
 func (r *vmfreeRuntime) Info(ctx context.Context) ContainerRuntimeInfo {
-	info := ContainerRuntimeInfo{Provider: "vmfree", DisplayName: "VM-free — Experimental", Endpoint: "unix://" + filepath.Join(r.home, "engine.sock"), Experimental: true,
+	info := ContainerRuntimeInfo{Provider: "vmfree", DisplayName: "Dockiva Engine", Endpoint: "unix://" + filepath.Join(r.home, "engine.sock"), Experimental: true,
 		Capabilities: RuntimeCapabilities{Containers: true, Lifecycle: true, Logs: true, Images: true, PullImages: true, CreateContainer: true, PortPublishing: true},
 		Message:      "Internal testing of linux/arm64 images pulled from registries. Snapshot logs; TCP ports publish on 127.0.0.1. No builds, terminal, volumes, Compose or resource statistics. Not production-qualified."}
 	_, err := r.request(ctx, "GET", "/_ping", nil)
@@ -108,7 +123,7 @@ func vmfreeCandidate() RuntimeCandidateInfo {
 	defer r.Close()
 	_, err := os.Stat(filepath.Join(r.home, "engine.sock"))
 	supported := runtime.GOOS == "darwin" && runtime.GOARCH == "arm64"
-	return RuntimeCandidateInfo{Provider: "vmfree", DisplayName: "VM-free — Experimental", Available: supported, Selectable: supported, Detected: err == nil, Experimental: true, Endpoint: "unix://" + filepath.Join(r.home, "engine.sock"), Message: "Internal testing only. Starts automatically when selected; includes shell, HTTP and prepared Redis demos."}
+	return RuntimeCandidateInfo{Provider: "vmfree", DisplayName: "Dockiva Engine", Available: supported, Selectable: supported, Detected: err == nil, Experimental: true, Endpoint: "unix://" + filepath.Join(r.home, "engine.sock"), Message: "Runs Linux containers natively on Apple Silicon, with no virtual machine. Starts automatically when selected."}
 }
 func (r *vmfreeRuntime) ListContainers(ctx context.Context) ([]ContainerInfo, error) {
 	data, err := r.request(ctx, "GET", "/containers/json?all=1", nil)
@@ -191,7 +206,7 @@ func (r *vmfreeRuntime) CreateRuntimeContainer(ctx context.Context, q RuntimeCre
 	bindings := map[string]any{}
 	for _, m := range q.PortMappings {
 		if m.Protocol != "" && m.Protocol != "tcp" {
-			return ContainerInfo{}, errors.New("VM-free publishes TCP ports only")
+			return ContainerInfo{}, errors.New("Dockiva Engine publishes TCP ports only")
 		}
 		bindings[fmt.Sprintf("%d/tcp", m.ContainerPort)] = []map[string]string{{"HostIp": "127.0.0.1", "HostPort": fmt.Sprint(m.HostPort)}}
 	}
@@ -229,12 +244,12 @@ func (r *vmfreeRuntime) RuntimeReadLogs(ctx context.Context, id string, tail int
 	var out bytes.Buffer
 	for len(data) > 0 {
 		if len(data) < 8 {
-			return RuntimeLogChunk{}, errors.New("truncated VM-free log frame")
+			return RuntimeLogChunk{}, errors.New("truncated Dockiva Engine log frame")
 		}
 		n := int(binary.BigEndian.Uint32(data[4:8]))
 		data = data[8:]
 		if n > len(data) {
-			return RuntimeLogChunk{}, errors.New("truncated VM-free log payload")
+			return RuntimeLogChunk{}, errors.New("truncated Dockiva Engine log payload")
 		}
 		out.Write(data[:n])
 		data = data[n:]

@@ -103,7 +103,7 @@ func (s *DockerService) StartManagedEngine(
 		_, err := s.SelectEngineBackend("vmfree", "", "")
 		status := s.GetEngineStatus("vmfree", "")
 		if err == nil && !status.Running {
-			err = errors.New("VM-free engine is offline; retry Start Engine")
+			err = errors.New("Dockiva Engine is offline; retry Start Engine")
 		}
 		return EngineActionResult{Status: status}, err
 	}
@@ -139,7 +139,7 @@ func (s *DockerService) SelectEngineBackend(
 	backend = normalizeEngineBackend(backend)
 	if backend == "vmfree" {
 		if runtime.GOOS != "darwin" || runtime.GOARCH != "arm64" {
-			return "", errors.New("VM-free preview requires an Apple Silicon Mac")
+			return "", errors.New("Dockiva Engine requires an Apple Silicon Mac")
 		}
 		// Keep this identity even while offline; never expose the previous Docker store.
 		r := newVMFreeRuntime()

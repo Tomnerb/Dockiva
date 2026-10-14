@@ -10,7 +10,7 @@ until this one reaches parity.
 Dockiva.app/Contents/
   MacOS/Dockiva          SwiftUI app
   MacOS/dockiva-core     Go core, started by the app; exits when the app does
-  Resources/             vmfree-engine, dockiva-vmm, guest (from the Wails build)
+  Resources/             dockiva-engine, dockiva-vmm, guest (from the Wails build)
 ```
 
 ## Build and run

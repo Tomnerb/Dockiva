@@ -716,7 +716,7 @@ func (s *DockerService) SelectComposeFolder() (string, error) {
 
 func (s *DockerService) ImportComposePath(inputPath string) (ComposeImportResult, error) {
 	if _, ok := s.currentRuntime().(*vmfreeRuntime); ok {
-		return ComposeImportResult{}, errors.New("Compose unsupported by VM-free preview")
+		return ComposeImportResult{}, errors.New("Compose unsupported by Dockiva Engine")
 	}
 
 	inputPath = strings.TrimSpace(inputPath)

@@ -1,7 +1,7 @@
 #!/bin/bash
 # Builds macos/build/Dockiva.app: the SwiftUI front end, the Go core beside it
 # (Contents/MacOS/dockiva-core) and the engine resources the core finds at
-# ../Resources (vmfree-engine, dockiva-vmm, guest), copied from a Wails build.
+# ../Resources (dockiva-engine, dockiva-vmm, guest), copied from a Wails build.
 #
 #   macos/build-app.sh [RESOURCES_DIR]   (default: bin/dockiva.app/Contents/Resources)
 set -euo pipefail
@@ -16,13 +16,15 @@ mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
 cp -f "$(swift build -c release --package-path "$root/macos" --show-bin-path)/Dockiva" "$app/Contents/MacOS/Dockiva"
 (cd "$root" && go build -trimpath -ldflags "-s -w" -o "$app/Contents/MacOS/dockiva-core" .)
 cp -f "$root/build/darwin/icons.icns" "$app/Contents/Resources/icons.icns"
-for item in vmfree-engine dockiva-vmm guest; do
+# vmfree-engine: a Wails build from before the engine's rename (the core finds either).
+for item in dockiva-engine vmfree-engine dockiva-vmm guest; do
     if [ -e "$resources/$item" ]; then
         cp -R "$resources/$item" "$app/Contents/Resources/"
-    else
-        echo "note: $resources/$item not found; the VM-free engine will be unavailable" >&2
     fi
 done
+if [ ! -e "$app/Contents/Resources/dockiva-engine" ] && [ ! -e "$app/Contents/Resources/vmfree-engine" ]; then
+    echo "note: no engine in $resources; Dockiva Engine will be unavailable" >&2
+fi
 
 cat > "$app/Contents/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>

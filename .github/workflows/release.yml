@@ -188,23 +188,24 @@ jobs:
             --team-id "$APPLE_TEAM_ID" \
             --password "$APPLE_APP_PASSWORD"
 
-      # The VM-free engine (bin/vmfree-engine) is built from the private
-      # vmfree-runtime repository at the commit pinned in VMFREE_RUNTIME_REF.
-      - name: Locate the VM-free runtime
+      # Dockiva Engine (bin/dockiva-engine) is built from the private dockiva-engine
+      # repository at the commit pinned in DOCKIVA_ENGINE_REF. The token secret keeps
+      # its original name, VMFREE_RUNTIME_TOKEN.
+      - name: Locate Dockiva Engine
         if: matrix.native
-        id: vmfree
+        id: engine
         shell: bash
         env:
-          VMFREE_RUNTIME_TOKEN: ${{ secrets.VMFREE_RUNTIME_TOKEN }}
+          ENGINE_TOKEN: ${{ secrets.VMFREE_RUNTIME_TOKEN }}
         run: |
           set -euo pipefail
-          if [[ -z "${VMFREE_RUNTIME_TOKEN:-}" ]]; then
-            echo "Set the VMFREE_RUNTIME_TOKEN secret (read access to Tomnerb/vmfree-runtime) to build the VM-free engine." >&2
+          if [[ -z "${ENGINE_TOKEN:-}" ]]; then
+            echo "Set the VMFREE_RUNTIME_TOKEN secret (read access to Tomnerb/dockiva-engine) to build Dockiva Engine." >&2
             exit 1
           fi
-          ref="$(tr -d '[:space:]' < VMFREE_RUNTIME_REF)"
+          ref="$(tr -d '[:space:]' < DOCKIVA_ENGINE_REF)"
           if [[ ! "$ref" =~ ^[0-9a-f]{40}$ ]]; then
-            echo "VMFREE_RUNTIME_REF must hold a full commit hash: $ref" >&2
+            echo "DOCKIVA_ENGINE_REF must hold a full commit hash: $ref" >&2
             exit 1
           fi
           echo "ref=$ref" >> "$GITHUB_OUTPUT"
@@ -212,15 +213,15 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         if: matrix.native
         with:
-          repository: Tomnerb/vmfree-runtime
-          ref: ${{ steps.vmfree.outputs.ref }}
-          path: vmfree-runtime
+          repository: Tomnerb/dockiva-engine
+          ref: ${{ steps.engine.outputs.ref }}
+          path: dockiva-engine
           token: ${{ secrets.VMFREE_RUNTIME_TOKEN }}
           persist-credentials: false
 
-      - name: Build the VM-free engine
+      - name: Build Dockiva Engine
         if: matrix.native
-        working-directory: vmfree-runtime
+        working-directory: dockiva-engine
         run: python3 scripts/bundle_dockiva_engine.py --output ../bin
 
       - name: Build and package

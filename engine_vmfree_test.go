@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -98,7 +99,7 @@ func TestVMFreeBundledAutoStart(t *testing.T) {
 	if err != nil || len(images) != 3 {
 		t.Fatalf("seed image: %v %v", images, err)
 	}
-	item, err := r.CreateRuntimeContainer(ctx, RuntimeCreateContainerRequest{Name: "bundled-test", Image: "vmfree/shell:demo", Command: []string{"-c", "busybox echo bundled"}, AutoStart: true})
+	item, err := r.CreateRuntimeContainer(ctx, RuntimeCreateContainerRequest{Name: "bundled-test", Image: "dockiva/shell:demo", Command: []string{"-c", "busybox echo bundled"}, AutoStart: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -122,7 +123,7 @@ func TestVMFreeBundledAutoStart(t *testing.T) {
 	if err = r.RestartContainer(ctx, item.ID, time.Second); err != nil {
 		t.Fatal(err)
 	}
-	server, err := r.CreateRuntimeContainer(ctx, RuntimeCreateContainerRequest{Name: "http-demo-test", Image: "vmfree/server:demo", Command: []string{"0"}, AutoStart: true})
+	server, err := r.CreateRuntimeContainer(ctx, RuntimeCreateContainerRequest{Name: "http-demo-test", Image: "dockiva/server:demo", Command: []string{"0"}, AutoStart: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -213,7 +214,7 @@ func TestVMFreeBundledAutoStart(t *testing.T) {
 	port := listener.Addr().(*net.TCPAddr).Port
 	listener.Close()
 	addressRedis := net.JoinHostPort("127.0.0.1", strconv.Itoa(port))
-	redis, err := r.CreateRuntimeContainer(ctx, RuntimeCreateContainerRequest{Name: "redis-bundled-test", Image: "vmfree/redis:preview", Command: []string{"--bind", "127.0.0.1", "--port", strconv.Itoa(port), "--dir", "/data", "--save", "", "--appendonly", "yes", "--appendfsync", "always", "--daemonize", "no"}, AutoStart: true})
+	redis, err := r.CreateRuntimeContainer(ctx, RuntimeCreateContainerRequest{Name: "redis-bundled-test", Image: "dockiva/redis:preview", Command: []string{"--bind", "127.0.0.1", "--port", strconv.Itoa(port), "--dir", "/data", "--save", "", "--appendonly", "yes", "--appendfsync", "always", "--daemonize", "no"}, AutoStart: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -302,5 +303,53 @@ func TestVMFreeMissingHelperDoesNotChangeRuntime(t *testing.T) {
 	}
 	if r.Info(context.Background()).Provider != "vmfree" {
 		t.Fatal("offline identity lost")
+	}
+}
+
+func TestLegacyEngineHomeMigration(t *testing.T) {
+	home, err := os.MkdirTemp("", "dh-") // short: ps output and socket paths
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(home)
+	t.Setenv("HOME", home)
+	t.Setenv("DOCKIVA_ENGINE_HOME", "")
+	t.Setenv("VMFREE_HOME", "")
+	legacy, current := filepath.Join(home, ".vmfree"), filepath.Join(home, ".dockiva-engine")
+	if engineHome() != current {
+		t.Fatal("a fresh install should use ~/.dockiva-engine")
+	}
+	if err := os.MkdirAll(filepath.Join(legacy, "containers", "db"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if engineHome() != legacy {
+		t.Fatal("an existing ~/.vmfree should stay in use until it moves")
+	}
+
+	// A process naming the old home (a container supervisor) blocks the move.
+	busy := exec.Command("/bin/sh", "-c", "sleep 5; true", filepath.Join(legacy, "containers", "db"))
+	if err := busy.Start(); err != nil {
+		t.Fatal(err)
+	}
+	r := vmfreeAt(legacy)
+	migrateLegacyHome(r)
+	_ = busy.Process.Kill()
+	_ = busy.Wait()
+	if r.home != legacy {
+		t.Fatal("moved the home while a process used it")
+	}
+
+	migrateLegacyHome(r)
+	if r.home != current {
+		t.Fatalf("home not moved: %s", r.home)
+	}
+	if st, err := os.Stat(filepath.Join(current, "containers", "db")); err != nil || !st.IsDir() {
+		t.Fatal("state did not move")
+	}
+	if target, err := os.Readlink(legacy); err != nil || target != current {
+		t.Fatalf("compatibility link: %q %v", target, err)
+	}
+	if engineHome() != current {
+		t.Fatal("after the move ~/.dockiva-engine is the home")
 	}
 }

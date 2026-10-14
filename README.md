@@ -493,22 +493,22 @@ runtime_*.go     Runtime-neutral Docker/containerd adapters
 Milestone-specific implementation decisions and known limitations are retained
 in [docs/MILESTONES.md](docs/MILESTONES.md).
 
-## Experimental VM-free backend
+## Dockiva Engine
 
-New Apple Silicon installations default to the bundled ARM64 VM-free runtime, which starts automatically without terminal setup. Existing engine choices are preserved. The runtime remains for internal testing. Its supported image and lifecycle subset is distinct from the native Linux VM backend. See [VMFREE-PREVIEW.md](VMFREE-PREVIEW.md) for project definitions, setup, capabilities and acceptance limits.
+New Apple Silicon installations default to the bundled ARM64 Dockiva Engine, which starts automatically without terminal setup. Existing engine choices are preserved. The runtime remains for internal testing. Its supported image and lifecycle subset is distinct from the native Linux VM backend. See [DOCKIVA-ENGINE.md](DOCKIVA-ENGINE.md) for project definitions, setup, capabilities and acceptance limits.
 
-New containers run natively under Hypervisor.framework where available (no guest kernel), with the interpreter as fallback; the Unicorn adapter has been removed. See the current-state section of [VMFREE-PREVIEW.md](VMFREE-PREVIEW.md).
+New containers run natively under Hypervisor.framework where available (no guest kernel), with the interpreter as fallback; the Unicorn adapter has been removed. See the current-state section of [DOCKIVA-ENGINE.md](DOCKIVA-ENGINE.md).
 
-The separate local `bin/dockiva-redis-test.app` build adds a prepared Redis 7.4.2 preset (originally on the now-removed Unicorn adapter). Use `bin/Launch Dockiva Redis Test.command` for isolated engine state, select VM-free, and create the Redis preview preset. It listens on `127.0.0.1:16379`; private data survives Stop/Start and Restart. The packaged adapter test passes; native GUI clicks, stock Redis images, PostgreSQL/Valkey and production use remain unqualified.
+The separate local `bin/dockiva-redis-test.app` build adds a prepared Redis 7.4.2 preset (originally on the now-removed Unicorn adapter). Use `bin/Launch Dockiva Redis Test.command` for isolated engine state, select Dockiva Engine, and create the Redis preview preset. It listens on `127.0.0.1:16379`; private data survives Stop/Start and Restart. The packaged adapter test passes; native GUI clicks, stock Redis images, PostgreSQL/Valkey and production use remain unqualified.
 
 The Go control-plane test build is `bin/dockiva-go-test.app`. Use
 `bin/Launch Dockiva Go Test.command` for isolated engine state. The helper migrates
 the supported preview API, OCI preparation, lifecycle, logs and recovery to Go/C.
 Existing running engines are reused; this launcher prevents an older Python daemon
-from masking the new build. See [migration evidence](https://github.com/Tomnerb/vmfree-runtime/blob/main/docs/DOCKIVA-INTEGRATION.md#dockivad-go-migration).
+from masking the new build. See [migration evidence](https://github.com/Tomnerb/dockiva-engine/blob/main/docs/DOCKIVA-INTEGRATION.md#dockivad-go-migration).
 
 The newer `bin/dockiva-profiles-test.app` adds digest-bound profiles and native
 capability negotiation. Use `bin/Launch Dockiva Profiles Test.command` for
 separate state. Inspect includes the selected backend, policy and experimental
-evidence scope; [profile verification](https://github.com/Tomnerb/vmfree-runtime/blob/main/docs/DOCKIVA-INTEGRATION.md#compatibility-profiles)
+evidence scope; [profile verification](https://github.com/Tomnerb/dockiva-engine/blob/main/docs/DOCKIVA-INTEGRATION.md#compatibility-profiles)
 includes backend replacement, aliases, restart persistence and service tests.

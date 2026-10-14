@@ -176,7 +176,7 @@ struct SidebarView: View {
                 .shadow(color: .cyan.opacity(0.25), radius: 10, y: 4)
             VStack(alignment: .leading, spacing: 1) {
                 Text("Dockiva").font(.system(size: 18, weight: .bold, design: .rounded))
-                Text("VM-free containers").font(.caption).foregroundStyle(.white.opacity(0.52))
+                Text("Dockiva Engine").font(.caption).foregroundStyle(.white.opacity(0.52))
             }
         }
         .padding(.horizontal, 22)

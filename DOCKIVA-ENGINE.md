@@ -1,4 +1,8 @@
-# VM-free default engine on Apple Silicon
+# Dockiva Engine: the default engine on Apple Silicon
+
+Dockiva Engine was called the VM-free engine before October 2026. Settings keep
+the backend value `vmfree`, and an existing `~/.vmfree` moves to `~/.dockiva-engine`
+the next time the engine starts while nothing uses it (a link stays at the old path).
 
 Production architecture is frozen in [baseline v1.0](docs/FINAL-ARCHITECTURE-V1.md). SwiftUI/AppKit and Go/C execution without Python are required migrations; this page describes the current Vue/Wails and bundled-Python preview. The runtime remains experimental. Valkey V0–V11 is the first major compatibility gate, PostgreSQL P0–P12 the second; both remain unaccepted. Existing Redis tests remain regression protection. Runtime semantics must use generic Linux state objects without named-application compatibility branches.
 
@@ -7,7 +11,7 @@ Production architecture is frozen in [baseline v1.0](docs/FINAL-ARCHITECTURE-V1.
 This section supersedes older capability statements further down the page.
 
 - **Execution backends.** New containers from unpinned images run **natively** under
-  Hypervisor.framework (`vmfree-c-hvf`): the CPU executes guest ARM64 code directly,
+  Hypervisor.framework (`dockiva-hvf`): the CPU executes guest ARM64 code directly,
   with no guest kernel or Linux VM; every Linux system call is served by the
   runtime. Where a VM cannot be created (inside VMs, CI runners, missing
   entitlement), the engine falls back to the interpreter. The Unicorn backend has
@@ -31,7 +35,7 @@ This section supersedes older capability statements further down the page.
   in the container's root, and descriptors pass between processes (`SCM_RIGHTS`);
   Linux abstract names are not supported yet. No IPv6 or raw sockets.
 - **Docker CLI.** The engine registers a `dockiva` Docker context (it never
-  switches the current one), served by `~/.vmfree/docker.sock`; access is limited
+  switches the current one), served by `~/.dockiva-engine/docker.sock`; access is limited
   to your user by file permissions, as with Docker's own socket. After
   `docker context use dockiva`, `docker run` (foreground or `-d`, `-i`, `-t`,
   `--rm`, `-p`, `-e`, `-u`, `-m`, `--cpus`, `-v`, `--mount`, `--read-only`,
@@ -48,7 +52,7 @@ This section supersedes older capability statements further down the page.
   supervisor; `always` and `unless-stopped` containers start again with the engine.
 - **Mounts and volumes.** `-v /host/path:/path[:ro]` binds a host directory or a
   single file; `-v name:/path` and `-v /path` use named and anonymous volumes
-  stored in `~/.vmfree/volumes`. A new volume first receives the image's content
+  stored in `~/.dockiva-engine/volumes`. A new volume first receives the image's content
   at its mount point, read-only mounts refuse writes, and symlinks or `..` inside
   a mount cannot reach the rest of the Mac. Postgres keeps its data in a named
   volume across container removal.
@@ -85,7 +89,7 @@ This section supersedes older capability statements further down the page.
   larger `PROT_NONE` reservations such as MariaDB's buffer pool placed above it;
   `munmap` and `MADV_DONTNEED` return memory; a process over the limit is killed
   with a fault rather than an OOM kill); 64 running containers
-  (`vmfree-engine --max-containers`). Files are capped at 4 GiB each; the
+  (`dockiva-engine --max-containers`). Files are capped at 4 GiB each; the
   Mac's disk is the only storage limit. Executables up to 512 MiB.
 - **Performance.** A container gets one vCPU per Mac CPU (`--cpus`, set by the
   engine). Processes and the threads of one process run in parallel: every
@@ -135,9 +139,9 @@ This section supersedes older capability statements further down the page.
   `CLOCK_REALTIME`/`CLOCK_MONOTONIC` and `gettimeofday` without a system call.
   Guest monotonic time excludes host sleep, as on Linux.
 
-New Dockiva installations on Apple Silicon Macs default to **VM-free —
+New Dockiva installations on Apple Silicon Macs default to **Dockiva Engine —
 Experimental**. Opening Dockiva starts its bundled engine when “Start engine on
-launch” is enabled (the default). Selecting VM-free in Engine Settings also starts
+launch” is enabled (the default). Selecting Dockiva Engine in Engine Settings also starts
 it. Saved engine choices and a disabled startup preference are preserved. Intel
 Macs retain the Linux VM default; Windows and Linux defaults are unchanged.
 
@@ -145,10 +149,10 @@ The complete app includes Go dockivad (API, OCI preparation and supervisors),
 C worker guards, both native ARM64 execution backends and three prepared demos.
 It contains no CPython runtime and launches no Python workers. Users need no
 terminal commands or runtime checkout. A running engine is
-reused. Engine startup failure stays on the VM-free backend and shows an error;
+reused. Engine startup failure stays on the Dockiva Engine backend and shows an error;
 there is no automatic fallback to Docker or a Linux VM.
 
-Create a container using `vmfree/shell:demo` with command JSON
+Create a container using `dockiva/shell:demo` with command JSON
 `["-c", "busybox echo hello"]`, leaving ports empty. The UI supports read-only
 creation, list/inspect/start/stop/restart/remove and stdout/stderr snapshots.
 Reopen logs to refresh. The API returns stdout then stderr; cross-stream ordering
@@ -156,21 +160,21 @@ is not promised. Engine and container supervisors continue when the UI closes,
 so reopening reconnects to the same store. The API is not currently stopped by
 Dockiva's managed-VM Stop button.
 
-Default state lives in `~/.vmfree`; `VMFREE_HOME` overrides it for developer tests.
+Default state lives in `~/.dockiva-engine`; `DOCKIVA_ENGINE_HOME` (or the older `VMFREE_HOME`) overrides it for developer tests.
 Dockiva authenticates over a private Unix socket and reloads its token per request.
-Startup diagnostics are in `~/.vmfree/dockiva-engine.log`. A missing bundled helper
+Startup diagnostics are in `~/.dockiva-engine/dockiva-engine.log`. A missing bundled helper
 is a packaging error, not a request for the user to install Python.
 
 ## Project scope
 
-Dockiva is the container workspace. vmfree-runtime is its separate experimental
+Dockiva is the container workspace. dockiva-engine is its separate experimental
 ARM64 Linux user-mode compatibility engine, executing bounded programs on macOS
 without a Linux VM. The existing Linux VM and external Docker backends remain
 selectable with separate stores. Being the default does not expand compatibility
 or establish a production isolation boundary.
 
 Builds, tmpfs mounts, more than one network per container and migration are
-unavailable for VM-free. M24+ execution modes are not enabled automatically
+unavailable for Dockiva Engine. M24+ execution modes are not enabled automatically
 through this API. M33 preview and M80 production acceptance gates remain open.
 No Docker Desktop RAM, CPU or battery savings have been established.
 
@@ -179,18 +183,18 @@ No Docker Desktop RAM, CPU or battery savings have been established.
 Build the helper on Apple Silicon with Go 1.22+, Xcode Command Line Tools
 and Python 3 for development build scripts. The native runtime is signed with
 `com.apple.security.hypervisor` (ad-hoc locally, Developer ID for releases).
-PyInstaller is no longer used. In the vmfree-runtime checkout:
+PyInstaller is no longer used. In the dockiva-engine checkout:
 
 ```sh
 python scripts/bundle_dockiva_engine.py --output /path/to/dockiva/bin
 ```
 
 Then build/package Dockiva normally. Its macOS packaging task copies
-`bin/vmfree-engine` into `Contents/Resources` before signing and fails if the helper
+`bin/dockiva-engine` into `Contents/Resources` before signing and fails if the helper
 is missing. Release builds do the same in CI: the macOS arm64 job checks out
-vmfree-runtime at the commit in `VMFREE_RUNTIME_REF` (using the
+dockiva-engine at the commit in `DOCKIVA_ENGINE_REF` (using the
 `VMFREE_RUNTIME_TOKEN` secret, read access to that private repository) and
-bundles the engine before packaging; update the file to ship a newer runtime. Source builds can use the absolute `DOCKIVA_VMFREE_HELPER` override.
+bundles the engine before packaging; update the file to ship a newer runtime. Source builds can use the absolute `DOCKIVA_ENGINE_HELPER` override.
 This build-time Python dependency is not an end-user dependency. The bundle must
 be built and qualified for each supported macOS version; this initial local build
 has not established the older deployment targets advertised by Dockiva.
@@ -208,13 +212,13 @@ not Developer-ID signing, notarization or clean-Mac distribution qualification.
 
 ## Persistent HTTP demo
 
-In Containers select **HTTP server demo**, then Create with auto-start enabled. The preset uses `vmfree/server:demo`, command `["18080"]` and no port mappings. Open http://127.0.0.1:18080/ in a browser. Use another listening port if occupied. Stop closes the listener; Start and Restart restore it. The demo stays running subject to existing instruction/CPU limits. The Hello preset finishes successfully with exit code 0.
+In Containers select **HTTP server demo**, then Create with auto-start enabled. The preset uses `dockiva/server:demo`, command `["18080"]` and no port mappings. Open http://127.0.0.1:18080/ in a browser. Use another listening port if occupied. Stop closes the listener; Start and Restart restore it. The demo stays running subject to existing instruction/CPU limits. The Hello preset finishes successfully with exit code 0.
 
 The bundled integration test verifies HTTP content, Running status, Stop listener closure, Start and Restart on a dynamically assigned port.
 
 ## Prepared Redis test preset (2026-09-22)
 
-The Redis preview button selects `vmfree/redis:preview`, a prepared Redis 7.4.2
+The Redis preview button selects `dockiva/redis:preview`, a prepared Redis 7.4.2
 fixture. Since 2026-10-12 it runs on the native backend (it previously used the
 removed Unicorn adapter); hosts without Hypervisor.framework reject it. Create with Command and Ports
 empty, then connect a Redis client to `127.0.0.1:16379`. Stop/Start and Restart
@@ -231,7 +235,7 @@ is reused, so the separate Redis test launcher uses its own state directory.
 The supported preview API now runs entirely in Go/C. Authenticated API startup,
 OCI imports, registry digest checks, lifecycle, snapshot logs, stale-supervisor
 reconciliation and state compatibility are implemented. Scope and evidence are in
-[the migration report](https://github.com/Tomnerb/vmfree-runtime/blob/main/docs/DOCKIVA-INTEGRATION.md#dockivad-go-migration). General Docker
+[the migration report](https://github.com/Tomnerb/dockiva-engine/blob/main/docs/DOCKIVA-INTEGRATION.md#dockivad-go-migration). General Docker
 features, machine-wide pressure management and production isolation are still open.
 
 The separate `bin/Launch Dockiva Go Test.command` starts `dockiva-go-test.app` with
@@ -250,5 +254,5 @@ All compatibility results remain EXPERIMENTAL.
 
 Use `bin/Launch Dockiva Profiles Test.command` for the latest isolated build,
 `bin/dockiva-profiles-test.app`, with `~/.vmfree-dockiva-profiles-test` state.
-Select VM-free if an existing preference chooses another engine.
-[Implementation and evidence](https://github.com/Tomnerb/vmfree-runtime/blob/main/docs/DOCKIVA-INTEGRATION.md#compatibility-profiles).
+Select Dockiva Engine if an existing preference chooses another engine.
+[Implementation and evidence](https://github.com/Tomnerb/dockiva-engine/blob/main/docs/DOCKIVA-INTEGRATION.md#compatibility-profiles).
