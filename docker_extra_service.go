@@ -177,7 +177,7 @@ func (s *DockerService) StartDockerContainerMigration() DockerMigrationStatus {
 	s.migrationStatus = DockerMigrationStatus{
 		Kind:    "container",
 		State:   "running",
-		Message: "Preparing Docker containers for migration into Dockiva Native.",
+		Message: "Preparing Docker containers for migration into " + s.migrationTargetName() + ".",
 	}
 	s.migrationStarted = time.Now()
 	status := s.migrationStatus
@@ -245,13 +245,10 @@ func countImportedImages(message string) int {
 }
 
 func (s *DockerService) GetDockerMigrationPreview() DockerMigrationPreview {
-	if _, ok := s.currentRuntime().(*vmfreeRuntime); ok {
-		return DockerMigrationPreview{Message: "Migration into Dockiva Engine is not available yet."}
-	}
-
+	_, toEngine := s.currentRuntime().(*vmfreeRuntime)
 	preview := DockerMigrationPreview{
 		Endpoint:                 s.dockerMigrationSourceEndpoint(),
-		VolumeMigrationSupported: runtime.GOOS == "linux",
+		VolumeMigrationSupported: runtime.GOOS == "linux" || toEngine,
 	}
 	if preview.Endpoint == "" {
 		preview.Message = "No external Docker endpoint is configured. Select External Docker once or choose an endpoint below."
@@ -287,6 +284,9 @@ func (s *DockerService) GetDockerMigrationPreview() DockerMigrationPreview {
 	preview.Available = preview.Containers > 0 || preview.Images > 0 || preview.Volumes > 0
 	if preview.Available {
 		preview.Message = "Existing Docker resources were found. Migration is opt-in and leaves Docker unchanged until verification succeeds."
+		if toEngine {
+			preview.Message = "Existing Docker resources were found. Migration copies them and leaves Docker unchanged. Migrate images and volumes before containers; only linux/arm64 images run on Dockiva Engine."
+		}
 	} else {
 		preview.Message = "Docker is connected, but it has no containers, images, or volumes to migrate."
 	}
@@ -348,17 +348,29 @@ func (s *DockerService) dockerMigrationSourceClient() (*client.Client, error) {
 // namespace one at a time. This avoids a single giant archive, gives the user
 // meaningful progress, and never modifies the source Docker store.
 func (s *DockerService) MigrateDockerImages() (DockerCLIResult, error) {
-	if _, ok := s.currentRuntime().(*vmfreeRuntime); ok {
-		return DockerCLIResult{}, errors.New("operation unsupported by Dockiva Engine")
-	}
-
-	images, err := runDockerCLIAtEndpoint(30*time.Second, "", s.dockerMigrationSourceEndpoint(), "image", "ls", "--format", "{{.Repository}}:{{.Tag}}")
+	source := s.dockerMigrationSourceEndpoint()
+	images, err := runDockerCLIAtEndpoint(30*time.Second, "", source, "image", "ls", "--format", "{{.Repository}}:{{.Tag}}")
 	if err != nil {
 		return DockerCLIResult{}, err
 	}
 	refs := uniqueDockerImageRefs(validDockerImageRefs(strings.Fields(images)))
 	if len(refs) == 0 {
 		return DockerCLIResult{Output: "No Docker images to migrate."}, nil
+	}
+	// Dockiva Engine runs linux/arm64 only: skip other images instead of failing the run.
+	var skipped []string
+	if _, ok := s.currentRuntime().(*vmfreeRuntime); ok {
+		s.setDockerMigrationProgress(DockerMigrationStatus{Message: "Checking image platforms…", TotalImages: len(refs)})
+		refs, skipped = splitArm64Refs(refs, func(ref string) (string, error) {
+			return runDockerCLIAtEndpoint(30*time.Second, "", source, "image", "inspect", "--format", "{{.Architecture}}", ref)
+		})
+	}
+	skippedNote := ""
+	if len(skipped) > 0 {
+		skippedNote = fmt.Sprintf(" Skipped %d not built for linux/arm64: %s.", len(skipped), summarizeMigrationItems(skipped))
+	}
+	if len(refs) == 0 {
+		return DockerCLIResult{Output: "Imported 0 Docker image(s)." + skippedNote}, nil
 	}
 	s.setDockerMigrationProgress(DockerMigrationStatus{
 		Message:     "Preparing Docker images for migration…",
@@ -388,7 +400,7 @@ func (s *DockerService) MigrateDockerImages() (DockerCLIResult, error) {
 			CurrentImage:   label,
 		})
 	}
-	return DockerCLIResult{Output: fmt.Sprintf("Imported %d Docker image(s) into Dockiva Native.", len(refs))}, nil
+	return DockerCLIResult{Output: fmt.Sprintf("Imported %d Docker image(s) into %s.", len(refs), s.migrationTargetName()) + skippedNote}, nil
 }
 
 func (s *DockerService) migrateSingleDockerImage(parentCtx context.Context, dockerPath, ref string, index, total int) error {
@@ -434,10 +446,15 @@ func (s *DockerService) migrateSingleDockerImage(parentCtx context.Context, dock
 			CurrentImage:   shortMigrationImageRef(ref),
 		})
 	}
-	importErr := s.importDockerImagesToNative(importCtx, archivePath)
+	var importErr error
+	if r, ok := s.currentRuntime().(*vmfreeRuntime); ok {
+		_, importErr = runDockerCLIAtEndpoint(10*time.Minute, "", r.dockerHost(), "image", "load", "-i", archivePath)
+	} else {
+		importErr = s.importDockerImagesToNative(importCtx, archivePath)
+	}
 	importCancel()
 	if importErr != nil {
-		return fmt.Errorf("import Docker image %s into Dockiva Native: %w", ref, importErr)
+		return fmt.Errorf("import Docker image %s into %s: %w", ref, s.migrationTargetName(), importErr)
 	}
 
 	return nil
@@ -457,8 +474,8 @@ func validDockerImageRefs(refs []string) []string {
 // MigrateDockerVolumes copies local Docker named-volume data into Dockiva's
 // managed volume store. It never stops containers or deletes Docker volumes.
 func (s *DockerService) MigrateDockerVolumes() (DockerCLIResult, error) {
-	if _, ok := s.currentRuntime().(*vmfreeRuntime); ok {
-		return DockerCLIResult{}, errors.New("operation unsupported by Dockiva Engine")
+	if r, ok := s.currentRuntime().(*vmfreeRuntime); ok {
+		return s.migrateDockerVolumesToEngine(r)
 	}
 
 	output, err := runDockerCLIAtEndpoint(30*time.Second, "", s.dockerMigrationSourceEndpoint(), "volume", "ls", "-q")
@@ -503,8 +520,8 @@ func (s *DockerService) MigrateDockerVolumes() (DockerCLIResult, error) {
 
 // MigrateDockerContainers copies stopped Docker containers into Dockiva Native.
 func (s *DockerService) MigrateDockerContainers() (DockerCLIResult, error) {
-	if _, ok := s.currentRuntime().(*vmfreeRuntime); ok {
-		return DockerCLIResult{}, errors.New("operation unsupported by Dockiva Engine")
+	if r, ok := s.currentRuntime().(*vmfreeRuntime); ok {
+		return s.migrateDockerContainersToEngine(r)
 	}
 
 	activeRuntime := s.currentRuntime()
