@@ -1,4 +1,5 @@
 import AppKit
+import SwiftTerm
 import SwiftUI
 
 struct ContainersView: View {
@@ -264,7 +265,7 @@ struct ContainerDetail: View {
     }
 }
 
-/// Text output from a log stream or terminal, trimmed to a bounded size.
+/// Text output from a log stream, trimmed to a bounded size.
 @MainActor @Observable
 final class StreamBuffer {
     var text = ""
@@ -325,48 +326,105 @@ struct LogsView: View {
     }
 }
 
-/// A line-oriented terminal: output as text, input sent a line (or control key) at a time.
+/// A full terminal (SwiftTerm) on a TTY exec in the container.
 struct TerminalView: View {
     let containerID: String
     @Environment(AppModel.self) private var model
-    @State private var buffer = StreamBuffer()
-    @State private var sessionID: String?
-    @State private var line = ""
-    @FocusState private var focused: Bool
+    @State private var session = TerminalSession()
 
     var body: some View {
-        VStack(spacing: 0) {
-            StreamTextView(text: buffer.text)
-            Divider()
-            HStack {
-                Text("$").font(.system(.body, design: .monospaced)).foregroundStyle(.secondary)
-                TextField("Command", text: $line)
-                    .textFieldStyle(.plain)
-                    .font(.system(.body, design: .monospaced))
-                    .focused($focused)
-                    .onSubmit { send(line + "\n"); line = "" }
-                Button("^C") { send("\u{03}") }.help("Send Ctrl-C")
-                Button("Tab") { send(line + "\t"); line = "" }.help("Complete")
+        TerminalHost(view: session.view)
+            .overlay(alignment: .top) {
+                if let ended = session.ended { Text(ended).font(.caption).padding(6).background(.thinMaterial, in: Capsule()).padding(8) }
             }
-            .padding(8)
-            .disabled(sessionID == nil || buffer.ended != nil)
-        }
-        .overlay(alignment: .top) {
-            if let ended = buffer.ended { Text(ended).font(.caption).padding(6).background(.thinMaterial, in: Capsule()).padding(8) }
-        }
-        .task {
-            do {
-                sessionID = try await model.openStream("DockerService.StartTerminal", [containerID]) { buffer.append($0) }
-                focused = true
-            } catch {
-                buffer.ended = error.localizedDescription
-            }
-        }
-        .onDisappear { if let sessionID { model.closeStream(sessionID, method: "DockerService.CloseTerminal") } }
+            .task { await session.start(containerID, model: model) }
+            .onDisappear { session.close() }
+    }
+}
+
+private struct TerminalHost: NSViewRepresentable {
+    let view: FocusingTerminalView
+    func makeNSView(context: Context) -> FocusingTerminalView { view }
+    func updateNSView(_ nsView: FocusingTerminalView, context: Context) {}
+}
+
+/// Takes keyboard focus once it is in a window, so typing works right away.
+final class FocusingTerminalView: SwiftTerm.TerminalView {
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        window?.makeFirstResponder(self)
+    }
+}
+
+/// One terminal session in the core: output fed to the SwiftTerm view, typing and size changes sent back.
+@MainActor @Observable
+final class TerminalSession: TerminalViewDelegate {
+    var ended: String?
+    @ObservationIgnored let view = FocusingTerminalView(frame: CGRect(x: 0, y: 0, width: 640, height: 400),
+                                                        font: .monospacedSystemFont(ofSize: 12, weight: .regular))
+    @ObservationIgnored private var id: String?
+    @ObservationIgnored private weak var model: AppModel?
+    @ObservationIgnored private var closed = false
+    @ObservationIgnored private var lastInput: Task<Void, Never>?
+
+    init() {
+        view.nativeBackgroundColor = NSColor.black.withAlphaComponent(0.35)
+        view.nativeForegroundColor = NSColor(white: 0.9, alpha: 1)
+        view.caretColor = NSColor(DockivaPalette.cyan)
+        view.terminalDelegate = self
     }
 
-    private func send(_ input: String) {
-        guard let sessionID, let core = model.core else { return }
-        Task { try? await core.run("DockerService.SendTerminalInput", [sessionID, input]) }
+    func start(_ containerID: String, model: AppModel) async {
+        self.model = model
+        do {
+            id = try await model.openStream("DockerService.StartTerminal", [containerID]) { [weak self] in self?.receive($0) }
+            if closed { close(); return }  // the view went away while the session started
+            let terminal = view.getTerminal()
+            resize(cols: terminal.cols, rows: terminal.rows)
+        } catch {
+            ended = error.localizedDescription
+        }
     }
+
+    func close() {
+        closed = true
+        guard let id, let model else { return }
+        self.id = nil
+        model.closeStream(id, method: "DockerService.CloseTerminal")
+    }
+
+    private func receive(_ output: StreamOutputEvent) {
+        // The core sends output as a JSON string; Go already replaced invalid UTF-8 with U+FFFD.
+        if let data = output.data { view.feed(byteArray: Array(data.utf8)[...]) }
+        if let error = output.error { ended = error } else if output.closed == true, ended == nil { ended = "Session ended" }
+    }
+
+    private func resize(cols: Int, rows: Int) {
+        guard let id, let core = model?.core, cols > 0, rows > 0 else { return }
+        Task { try? await core.run("DockerService.ResizeTerminal", [id, cols, rows]) }
+    }
+
+    private func sendInput(_ data: ArraySlice<UInt8>) {
+        guard let id, let core = model?.core, ended == nil else { return }
+        // SendTerminalInput takes a Go string over JSON, so input must be UTF-8. Keys and pastes are;
+        // other bytes (legacy X10 mouse reports past column/row 95) would arrive as U+FFFD.
+        let text = String(decoding: data, as: UTF8.self)
+        // Chained so input reaches the core in order.
+        lastInput = Task { [previous = lastInput] in
+            await previous?.value
+            try? await core.run("DockerService.SendTerminalInput", [id, text])
+        }
+    }
+
+    // TerminalViewDelegate: SwiftTerm calls these on the main thread, from its NSView.
+    nonisolated func send(source: SwiftTerm.TerminalView, data: ArraySlice<UInt8>) {
+        MainActor.assumeIsolated { sendInput(data) }
+    }
+    nonisolated func sizeChanged(source: SwiftTerm.TerminalView, newCols: Int, newRows: Int) {
+        MainActor.assumeIsolated { resize(cols: newCols, rows: newRows) }
+    }
+    nonisolated func setTerminalTitle(source: SwiftTerm.TerminalView, title: String) {}
+    nonisolated func hostCurrentDirectoryUpdate(source: SwiftTerm.TerminalView, directory: String?) {}
+    nonisolated func scrolled(source: SwiftTerm.TerminalView, position: Double) {}
+    nonisolated func rangeChanged(source: SwiftTerm.TerminalView, startY: Int, endY: Int) {}
 }
