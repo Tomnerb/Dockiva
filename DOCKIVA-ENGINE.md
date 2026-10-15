@@ -50,6 +50,20 @@ This section supersedes older capability statements further down the page.
   (`psql`, `redis-cli`, shells) but cannot see or signal the container's own
   processes. Restart policies and healthchecks are run by each container's
   supervisor; `always` and `unless-stopped` containers start again with the engine.
+- **Builds.** `docker build` runs Dockerfiles through Docker's classic builder
+  API: `FROM` (multi-stage, `AS`, `scratch`, `--platform=linux/arm64`), `RUN`
+  (shell and exec form, in a container with the stage's network access), `COPY`
+  and `ADD` (globs, `--from` a stage or image, `--chmod`, ADD of URLs and of
+  tar/gzip/bzip2 archives), `ENV`, `ARG` and `--build-arg`, `WORKDIR`, `USER`,
+  `LABEL`, `EXPOSE`, `CMD`, `ENTRYPOINT`, `VOLUME`, `HEALTHCHECK`, `SHELL`,
+  `STOPSIGNAL`, `--target`, `-t`, `-q`, `.dockerignore`, `docker build - <
+  Dockerfile`, and `docker compose build` / `up --build`. An image is its base
+  image's layers plus one layer of the build's changes; an untagged build is
+  found by its ID (`docker run <id>`). Docker CLI 23 and later send builds to
+  BuildKit (buildx) unless `DOCKER_BUILDKIT=0` is set, so set it for builds:
+  `export DOCKER_BUILDKIT=0`. Not yet: BuildKit features (`RUN --mount`,
+  heredocs, secrets), a step cache (every build runs every step), xz archives
+  in `ADD`.
 - **Mounts and volumes.** `-v /host/path:/path[:ro]` binds a host directory or a
   single file; `-v name:/path` and `-v /path` use named and anonymous volumes
   stored in `~/.dockiva-engine/volumes`. A new volume first receives the image's content
