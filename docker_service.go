@@ -17,7 +17,6 @@ import (
 	"time"
 
 	"github.com/moby/moby/client"
-	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
 const (
@@ -313,7 +312,7 @@ func (s *DockerService) ListImages() ([]ImageInfo, error) {
 
 func (s *DockerService) RemoveImage(imageID string, force bool) error {
 	if _, ok := s.currentRuntime().(*vmfreeRuntime); ok {
-		return errors.New("operation unsupported by VM-free preview")
+		return errors.New("operation unsupported by Dockiva Engine")
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -382,7 +381,7 @@ func (s *DockerService) ListVolumes() ([]VolumeInfo, error) {
 
 func (s *DockerService) RemoveVolume(name string, force bool) error {
 	if _, ok := s.currentRuntime().(*vmfreeRuntime); ok {
-		return errors.New("operation unsupported by VM-free preview")
+		return errors.New("operation unsupported by Dockiva Engine")
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
@@ -453,7 +452,7 @@ func (s *DockerService) ListNetworks() ([]NetworkInfo, error) {
 
 func (s *DockerService) RemoveNetwork(networkID string) error {
 	if _, ok := s.currentRuntime().(*vmfreeRuntime); ok {
-		return errors.New("operation unsupported by VM-free preview")
+		return errors.New("operation unsupported by Dockiva Engine")
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
@@ -536,7 +535,7 @@ func (s *DockerService) RemoveContainer(containerID string, force bool) error {
 
 func (s *DockerService) ComposeProjectAction(project string, action string) error {
 	if _, ok := s.currentRuntime().(*vmfreeRuntime); ok {
-		return errors.New("operation unsupported by VM-free preview")
+		return errors.New("operation unsupported by Dockiva Engine")
 	}
 
 	project = strings.TrimSpace(project)
@@ -1216,12 +1215,7 @@ func (s *DockerService) containerUsesTTY(containerID string) bool {
 }
 
 func (s *DockerService) emitStreamEvent(name string, event StreamOutputEvent) {
-	app := application.Get()
-	if app == nil {
-		return
-	}
-
-	app.Event.Emit(name, event)
+	emitEvent(name, event)
 }
 
 func newSessionID() (string, error) {

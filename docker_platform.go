@@ -654,17 +654,15 @@ func (s *DockerService) watchDockerEvents(ctx context.Context) {
 				continue
 			}
 
-			if app := application.Get(); app != nil {
-				app.Event.Emit(
-					dockerChangedEvent,
-					DockerEventNotice{
-						Type:   raw.Type,
-						Action: raw.Action,
-						ID:     raw.ID,
-						Time:   raw.Time,
-					},
-				)
-			}
+			emitEvent(
+				dockerChangedEvent,
+				DockerEventNotice{
+					Type:   raw.Type,
+					Action: raw.Action,
+					ID:     raw.ID,
+					Time:   raw.Time,
+				},
+			)
 		}
 
 		_ = cmd.Wait()
@@ -718,7 +716,7 @@ func (s *DockerService) SelectComposeFolder() (string, error) {
 
 func (s *DockerService) ImportComposePath(inputPath string) (ComposeImportResult, error) {
 	if _, ok := s.currentRuntime().(*vmfreeRuntime); ok {
-		return ComposeImportResult{}, errors.New("Compose unsupported by VM-free preview")
+		return ComposeImportResult{}, errors.New("Compose unsupported by Dockiva Engine")
 	}
 
 	inputPath = strings.TrimSpace(inputPath)

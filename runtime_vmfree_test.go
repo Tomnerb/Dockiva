@@ -22,7 +22,7 @@ func TestVMFreeIdentityAndCapabilities(t *testing.T) {
 	s := &DockerService{}
 	s.replaceRuntime(r)
 	// With no engine running the pull fails in the VM-free client, not the Docker CLI.
-	if _, err := s.PullImage("alpine"); err == nil || !strings.Contains(err.Error(), "VM-free engine is not ready") {
+	if _, err := s.PullImage("alpine"); err == nil || !strings.Contains(err.Error(), "Dockiva Engine is not ready") {
 		t.Fatalf("pull did not stay on VM-free: %v", err)
 	}
 	if err := s.RemoveImage("other-daemon-image", true); err == nil {

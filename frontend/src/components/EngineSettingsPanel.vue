@@ -181,7 +181,7 @@ const backendOptions = computed(() => {
 
   return [
     native,
-    ...(props.platform?.os === "darwin" ? [{ value: "vmfree", title: "VM-free — Experimental", desc: "Test supported ARM64 images without a VM. Starts automatically when selected." }] : []),
+    ...(props.platform?.os === "darwin" ? [{ value: "vmfree", title: "Dockiva Engine", desc: "Runs ARM64 Linux containers natively, with no VM. Starts automatically when selected." }] : []),
     { value: 'external', title: 'External Docker', desc: 'Use the saved Docker Desktop, System Docker, rootless Docker, or custom endpoint.' },
   ]
 })
@@ -473,7 +473,7 @@ onBeforeUnmount(() => {
           <div class="flex items-center gap-3">
             <span class="h-3 w-3 rounded-full" :class="status.running ? 'bg-emerald-500' : 'bg-zinc-600'" />
             <div>
-              <div class="font-medium">{{ status.running ? 'Engine running' : settings.engineBackend === 'vmfree' ? 'VM-free engine offline' : settings.engineBackend === 'external' ? 'External Docker offline' : 'Dockiva engine stopped' }}</div>
+              <div class="font-medium">{{ status.running ? 'Engine running' : settings.engineBackend === 'vmfree' ? 'Dockiva Engine offline' : settings.engineBackend === 'external' ? 'External Docker offline' : 'Dockiva engine stopped' }}</div>
               <div class="mt-0.5 text-xs text-zinc-500">{{ status.message }}</div>
               <div
                 v-if="settings.engineBackend === 'external' && dockerIdentity?.endpoint"

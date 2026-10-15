@@ -88,6 +88,11 @@ func main() {
 		}
 	}
 
+	if socket, ok := argValue("--core"); ok {
+		runCore(socket, dockerService, appService, settings)
+		return
+	}
+
 	startHidden := settings.StartHidden || hasArg("--hidden")
 
 	app := application.New(application.Options{

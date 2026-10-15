@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"github.com/moby/moby/client"
-	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
 const (
@@ -123,12 +122,9 @@ func (s *DockerService) GetDockerMigrationStatus() DockerMigrationStatus {
 }
 
 func (s *DockerService) emitMigrationStatus(status DockerMigrationStatus) {
-	app := application.Get()
-	if app != nil {
-		// Wails can dispatch this while handling the RPC that starts migration.
-		// Never let a UI event hold the worker launch or image-transfer loop.
-		go app.Event.Emit(dockerMigrationStatusEvent, status)
-	}
+	// Wails can dispatch this while handling the RPC that starts migration.
+	// Never let a UI event hold the worker launch or image-transfer loop.
+	go emitEvent(dockerMigrationStatusEvent, status)
 }
 
 // StartDockerImageMigration starts a single tracked migration and returns
@@ -250,7 +246,7 @@ func countImportedImages(message string) int {
 
 func (s *DockerService) GetDockerMigrationPreview() DockerMigrationPreview {
 	if _, ok := s.currentRuntime().(*vmfreeRuntime); ok {
-		return DockerMigrationPreview{Message: "Migration is unavailable for VM-free internal testing."}
+		return DockerMigrationPreview{Message: "Migration into Dockiva Engine is not available yet."}
 	}
 
 	preview := DockerMigrationPreview{
@@ -353,7 +349,7 @@ func (s *DockerService) dockerMigrationSourceClient() (*client.Client, error) {
 // meaningful progress, and never modifies the source Docker store.
 func (s *DockerService) MigrateDockerImages() (DockerCLIResult, error) {
 	if _, ok := s.currentRuntime().(*vmfreeRuntime); ok {
-		return DockerCLIResult{}, errors.New("operation unsupported by VM-free preview")
+		return DockerCLIResult{}, errors.New("operation unsupported by Dockiva Engine")
 	}
 
 	images, err := runDockerCLIAtEndpoint(30*time.Second, "", s.dockerMigrationSourceEndpoint(), "image", "ls", "--format", "{{.Repository}}:{{.Tag}}")
@@ -462,7 +458,7 @@ func validDockerImageRefs(refs []string) []string {
 // managed volume store. It never stops containers or deletes Docker volumes.
 func (s *DockerService) MigrateDockerVolumes() (DockerCLIResult, error) {
 	if _, ok := s.currentRuntime().(*vmfreeRuntime); ok {
-		return DockerCLIResult{}, errors.New("operation unsupported by VM-free preview")
+		return DockerCLIResult{}, errors.New("operation unsupported by Dockiva Engine")
 	}
 
 	output, err := runDockerCLIAtEndpoint(30*time.Second, "", s.dockerMigrationSourceEndpoint(), "volume", "ls", "-q")
@@ -508,7 +504,7 @@ func (s *DockerService) MigrateDockerVolumes() (DockerCLIResult, error) {
 // MigrateDockerContainers copies stopped Docker containers into Dockiva Native.
 func (s *DockerService) MigrateDockerContainers() (DockerCLIResult, error) {
 	if _, ok := s.currentRuntime().(*vmfreeRuntime); ok {
-		return DockerCLIResult{}, errors.New("operation unsupported by VM-free preview")
+		return DockerCLIResult{}, errors.New("operation unsupported by Dockiva Engine")
 	}
 
 	activeRuntime := s.currentRuntime()
@@ -1056,7 +1052,7 @@ func (s *DockerService) GetContainerDetails(containerID string) (ContainerDetail
 
 func (s *DockerService) GetComposeProjectDetails(project string) (ComposeProjectDetails, error) {
 	if _, ok := s.currentRuntime().(*vmfreeRuntime); ok {
-		return ComposeProjectDetails{}, errors.New("operation unsupported by VM-free preview")
+		return ComposeProjectDetails{}, errors.New("operation unsupported by Dockiva Engine")
 	}
 
 	project = strings.TrimSpace(project)
@@ -1113,7 +1109,7 @@ func (s *DockerService) GetComposeProjectDetails(project string) (ComposeProject
 
 func (s *DockerService) RunComposeCommand(project string, action string) (DockerCLIResult, error) {
 	if _, ok := s.currentRuntime().(*vmfreeRuntime); ok {
-		return DockerCLIResult{}, errors.New("operation unsupported by VM-free preview")
+		return DockerCLIResult{}, errors.New("operation unsupported by Dockiva Engine")
 	}
 
 	action = strings.ToLower(strings.TrimSpace(action))
@@ -1196,7 +1192,7 @@ func (s *DockerService) PullImage(reference string) (DockerCLIResult, error) {
 		return DockerCLIResult{}, errors.New("image reference is required")
 	}
 
-	// VM-free pulls through its own engine; never fall through to the Docker CLI.
+	// Dockiva Engine pulls through its own engine; never fall through to the Docker CLI.
 	if _, ok := s.currentRuntime().(*vmfreeRuntime); ok {
 		result, err := s.RuntimePullImage(reference)
 		return DockerCLIResult{Output: result.Detail}, err
@@ -1208,7 +1204,7 @@ func (s *DockerService) PullImage(reference string) (DockerCLIResult, error) {
 
 func (s *DockerService) CreateVolume(name string, driver string) (DockerCLIResult, error) {
 	if _, ok := s.currentRuntime().(*vmfreeRuntime); ok {
-		return DockerCLIResult{}, errors.New("operation unsupported by VM-free preview")
+		return DockerCLIResult{}, errors.New("operation unsupported by Dockiva Engine")
 	}
 
 	name = strings.TrimSpace(name)
@@ -1232,7 +1228,7 @@ func (s *DockerService) CreateVolume(name string, driver string) (DockerCLIResul
 
 func (s *DockerService) CreateNetwork(name string, driver string) (DockerCLIResult, error) {
 	if _, ok := s.currentRuntime().(*vmfreeRuntime); ok {
-		return DockerCLIResult{}, errors.New("operation unsupported by VM-free preview")
+		return DockerCLIResult{}, errors.New("operation unsupported by Dockiva Engine")
 	}
 
 	name = strings.TrimSpace(name)
@@ -1264,7 +1260,7 @@ func (s *DockerService) CreateNetwork(name string, driver string) (DockerCLIResu
 
 func (s *DockerService) GetDiskUsage() ([]DockerDiskUsageItem, error) {
 	if _, ok := s.currentRuntime().(*vmfreeRuntime); ok {
-		return nil, errors.New("resource accounting unavailable for VM-free preview")
+		return nil, errors.New("resource accounting unavailable for Dockiva Engine")
 	}
 
 	output, err := runDockerCLI(
@@ -1319,7 +1315,7 @@ func (s *DockerService) GetDiskUsage() ([]DockerDiskUsageItem, error) {
 
 func (s *DockerService) PruneDocker(scope string) (DockerCLIResult, error) {
 	if _, ok := s.currentRuntime().(*vmfreeRuntime); ok {
-		return DockerCLIResult{}, errors.New("operation unsupported by VM-free preview")
+		return DockerCLIResult{}, errors.New("operation unsupported by Dockiva Engine")
 	}
 
 	scope = strings.ToLower(strings.TrimSpace(scope))
