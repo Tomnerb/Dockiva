@@ -230,10 +230,13 @@ func runCore(socket string, dockerService *DockerService, appService *AppService
 	_ = os.Remove(socket)
 }
 
-func argValue(name string) (string, bool) {
-	for i, arg := range os.Args[1 : len(os.Args)-1] {
-		if arg == name {
-			return os.Args[i+2], true
+// argValue is the argument after name on the command line (dockiva --core SOCKET).
+func argValue(name string) (string, bool) { return argAfter(os.Args, name) }
+
+func argAfter(args []string, name string) (string, bool) {
+	for i := 1; i+1 < len(args); i++ {
+		if args[i] == name {
+			return args[i+1], true
 		}
 	}
 	return "", false
