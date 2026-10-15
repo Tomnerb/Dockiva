@@ -92,7 +92,7 @@ jobs:
       - name: Build guest assets
         run: ./scripts/build-macos-guest-assets-linux.sh
 
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: macos-guest-arm64
           path: dist/macos-guest/
@@ -255,7 +255,7 @@ jobs:
           xcrun stapler validate "dist/macos-${{ matrix.arch }}/Dockiva.app"
           xcrun stapler validate "dist/macos-${{ matrix.arch }}/Dockiva-$(cat VERSION)-macOS-${{ matrix.arch }}.dmg"
 
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-macos-${{ matrix.arch }}
           path: |
@@ -378,7 +378,7 @@ jobs:
           if ($binary.Status -ne "Valid") { throw "Application signature is $($binary.Status)." }
           if ($installer.Status -ne "Valid") { throw "Installer signature is $($installer.Status)." }
 
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-windows-amd64
           path: dist/release/
@@ -438,7 +438,7 @@ jobs:
           tar -C dist/release/stage -czf "dist/release/Dockiva-$version-linux-${{ matrix.arch }}.tar.gz" dockiva
           rm -rf dist/release/stage
 
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-linux-${{ matrix.arch }}
           path: dist/release/
