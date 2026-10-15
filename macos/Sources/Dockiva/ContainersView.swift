@@ -271,12 +271,30 @@ final class StreamBuffer {
     var text = ""
     var ended: String?
     private let limit = 400_000
+    private var pending: [UInt8] = []
 
     func append(_ output: StreamOutputEvent) {
-        if let data = output.data { text += stripANSI(data) }
+        if let data = output.dataBase64 { text += stripANSI(decodeUTF8Chunk(&pending, data)) }
         if text.count > limit { text = String(text.suffix(limit * 3 / 4)) }
         if let error = output.error { ended = error } else if output.closed == true { ended = "Stream ended" }
     }
+}
+
+/// Decodes a chunk of a UTF-8 stream. An incomplete character at the end stays in
+/// `pending` for the next chunk; other invalid bytes become U+FFFD.
+func decodeUTF8Chunk(_ pending: inout [UInt8], _ chunk: Data) -> String {
+    var bytes: [UInt8] = pending + chunk
+    pending = []
+    // The last lead byte within 3 bytes of the end: keep it back if its sequence is cut short.
+    if let lead = bytes.indices.reversed().prefix(4).first(where: { bytes[$0] & 0xC0 != 0x80 }) {
+        let b = bytes[lead]
+        let length = b >= 0xF0 && b <= 0xF4 ? 4 : b >= 0xE0 && b < 0xF0 ? 3 : b >= 0xC2 && b < 0xE0 ? 2 : 1
+        if lead + length > bytes.count {
+            pending = Array(bytes[lead...])
+            bytes.removeSubrange(lead...)
+        }
+    }
+    return String(decoding: bytes, as: UTF8.self)
 }
 
 /// Removes terminal escape sequences (colors, cursor movement) for plain-text display.
@@ -394,8 +412,8 @@ final class TerminalSession: TerminalViewDelegate {
     }
 
     private func receive(_ output: StreamOutputEvent) {
-        // The core sends output as a JSON string; Go already replaced invalid UTF-8 with U+FFFD.
-        if let data = output.data { view.feed(byteArray: Array(data.utf8)[...]) }
+        // Raw bytes: SwiftTerm decodes UTF-8 itself and keeps a character split across chunks.
+        if let data = output.dataBase64 { view.feed(byteArray: [UInt8](data)[...]) }
         if let error = output.error { ended = error } else if output.closed == true, ended == nil { ended = "Session ended" }
     }
 
@@ -406,13 +424,12 @@ final class TerminalSession: TerminalViewDelegate {
 
     private func sendInput(_ data: ArraySlice<UInt8>) {
         guard let id, let core = model?.core, ended == nil else { return }
-        // SendTerminalInput takes a Go string over JSON, so input must be UTF-8. Keys and pastes are;
-        // other bytes (legacy X10 mouse reports past column/row 95) would arrive as U+FFFD.
-        let text = String(decoding: data, as: UTF8.self)
+        // Data encodes as base64, so any byte sequence (X10 mouse reports, 8-bit C1) crosses intact.
+        let bytes = Data(data)
         // Chained so input reaches the core in order.
         lastInput = Task { [previous = lastInput] in
             await previous?.value
-            try? await core.run("DockerService.SendTerminalInput", [id, text])
+            try? await core.run("DockerService.SendTerminalBytes", [id, bytes])
         }
     }
 

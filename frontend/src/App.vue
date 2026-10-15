@@ -98,7 +98,7 @@ interface ContainerGroup {
 interface StreamOutputEvent {
   streamId: string
   containerId: string
-  data?: string
+  dataBase64?: string
   error?: string
   closed?: boolean
   seq: number
@@ -256,6 +256,8 @@ const logsOpen = ref(false)
 const logsContainer = ref<Container | null>(null)
 const logsText = ref('')
 const logsStreamID = ref('')
+// Streaming decoder: keeps a UTF-8 character split across chunks until it completes.
+let logsDecoder = new TextDecoder()
 const logsFollowing = ref(false)
 const logTail = ref(200)
 const logsViewport = ref<HTMLElement | null>(null)
@@ -1353,6 +1355,7 @@ async function openLogs(container: Container) {
   logsContainer.value = container
   logsText.value = ''
   logsFollowing.value = true
+  logsDecoder = new TextDecoder()
 
   try {
     logsStreamID.value = await Call.ByName(
@@ -1395,7 +1398,8 @@ function setupLogListener() {
   unsubscribeLogs = Events.On(
     'dockiva:log-output',
     (payload: any) => {
-      const data = payload as StreamOutputEvent
+      // Wails v3 delivers a WailsEvent wrapper; the payload is under `.data`.
+      const data = (payload?.data ?? payload) as StreamOutputEvent
 
       const matchesStream = logsStreamID.value
         ? data?.streamId === logsStreamID.value
@@ -1405,8 +1409,9 @@ function setupLogListener() {
         return
       }
 
-      if (data.data) {
-        logsText.value = appendLimited(logsText.value, data.data)
+      if (data.dataBase64) {
+        const bytes = Uint8Array.from(atob(data.dataBase64), (c) => c.charCodeAt(0))
+        logsText.value = appendLimited(logsText.value, logsDecoder.decode(bytes, { stream: true }))
         void scrollLogsToBottom()
       }
 
