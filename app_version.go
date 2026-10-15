@@ -6,11 +6,13 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"os/exec"
 	"strconv"
 	"strings"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/updater"
+	"github.com/wailsapp/wails/v3/pkg/updater/providers/github"
 )
 
 //go:embed VERSION
@@ -65,14 +67,43 @@ func (s *AppService) GetVersionInfo() VersionInfo {
 	}
 }
 
+// coreUpdater is the updater of the headless core (dockiva --core), which runs
+// without a Wails app; the native macOS front end updates through it.
+var coreUpdater *updater.Updater
+
+// appUpdater is the Wails app's updater, or the core's.
+func appUpdater() *updater.Updater {
+	if app := application.Get(); app != nil && app.Updater != nil {
+		return app.Updater
+	}
+	return coreUpdater
+}
+
+// updaterConfig is how Dockiva finds and verifies releases: GitHub releases with
+// a required SHA256SUMS entry for the platform's archive.
+func updaterConfig() (updater.Config, error) {
+	githubUpdates, err := github.New(github.Config{
+		Repository:    "Tomnerb/Dockiva",
+		ChecksumAsset: "SHA256SUMS",
+	})
+	if err != nil {
+		return updater.Config{}, err
+	}
+	return updater.Config{
+		CurrentVersion: currentVersion(),
+		Providers:      []updater.Provider{requiredChecksumProvider{provider: githubUpdates}},
+		Window:         updater.WindowNone,
+	}, nil
+}
+
 func (s *AppService) CheckForUpdates() (UpdateInfo, error) {
 	current := currentVersion()
-	app := application.Get()
-	if app == nil || app.Updater == nil {
+	u := appUpdater()
+	if u == nil {
 		return UpdateInfo{}, errors.New("application updater is unavailable")
 	}
 
-	release, err := app.Updater.Check(context.Background())
+	release, err := u.Check(context.Background())
 	if err != nil {
 		return UpdateInfo{}, fmt.Errorf("check for updates: %w", err)
 	}
@@ -91,14 +122,14 @@ func (s *AppService) CheckForUpdates() (UpdateInfo, error) {
 // digest, stages it, and restarts Dockiva through Wails' detached updater
 // helper. The running application is only replaced after it has exited.
 func (s *AppService) ApplyUpdate() error {
-	app := application.Get()
-	if app == nil || app.Updater == nil {
+	u := appUpdater()
+	if u == nil {
 		return errors.New("application updater is unavailable")
 	}
-	if err := app.Updater.DownloadAndInstall(context.Background()); err != nil {
+	if err := u.DownloadAndInstall(context.Background()); err != nil {
 		return fmt.Errorf("download update: %w", err)
 	}
-	if err := app.Updater.Restart(context.Background()); err != nil {
+	if err := u.Restart(context.Background()); err != nil {
 		return fmt.Errorf("restart into update: %w", err)
 	}
 	return nil
@@ -136,11 +167,10 @@ func (s *AppService) OpenUpdatePage(releaseURL string) error {
 	if err := validateReleaseURL(releaseURL); err != nil {
 		return err
 	}
-	app := application.Get()
-	if app == nil || app.Browser == nil {
-		return errors.New("application browser is unavailable")
+	if app := application.Get(); app != nil && app.Browser != nil {
+		return app.Browser.OpenURL(releaseURL)
 	}
-	return app.Browser.OpenURL(releaseURL)
+	return exec.Command("/usr/bin/open", releaseURL).Start() // the core, for the native front end
 }
 
 func validateReleaseURL(raw string) error {

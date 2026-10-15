@@ -1,4 +1,4 @@
-// swift-tools-version:6.0
+// swift-tools-version:5.9
 import PackageDescription
 
 // Dockiva's native macOS front end. It runs the Go core (`dockiva --core SOCKET`)
@@ -7,7 +7,7 @@ let package = Package(
     name: "Dockiva",
     platforms: [.macOS(.v14)],
     targets: [
-        .executableTarget(name: "Dockiva", path: "Sources/Dockiva", swiftSettings: [.swiftLanguageMode(.v5)]),
-        .testTarget(name: "DockivaTests", dependencies: ["Dockiva"], path: "Tests/DockivaTests", swiftSettings: [.swiftLanguageMode(.v5)]),
+        .executableTarget(name: "Dockiva", path: "Sources/Dockiva"),
+        .testTarget(name: "DockivaTests", dependencies: ["Dockiva"], path: "Tests/DockivaTests"),
     ]
 )

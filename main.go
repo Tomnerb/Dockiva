@@ -8,7 +8,6 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/events"
 	"github.com/wailsapp/wails/v3/pkg/updater"
-	"github.com/wailsapp/wails/v3/pkg/updater/providers/github"
 )
 
 //go:embed all:frontend/dist
@@ -18,6 +17,10 @@ var assets embed.FS
 var trayIcon []byte
 
 func main() {
+	// An update's swap helper is this executable started again (by the Wails app
+	// or by the core); it replaces Dockiva.app, reopens it and exits here.
+	updater.HandleHelperMode()
+
 	appService, err := NewAppService()
 	if err != nil {
 		log.Fatal(err)
@@ -107,20 +110,11 @@ func main() {
 		},
 	})
 
-	githubUpdates, err := github.New(github.Config{
-		Repository:    "Tomnerb/Dockiva",
-		ChecksumAsset: "SHA256SUMS",
-	})
+	updates, err := updaterConfig()
 	if err != nil {
 		log.Fatal(err)
 	}
-	if err := app.Updater.Init(updater.Config{
-		CurrentVersion: currentVersion(),
-		Providers: []updater.Provider{
-			requiredChecksumProvider{provider: githubUpdates},
-		},
-		Window: updater.WindowNone,
-	}); err != nil {
+	if err := app.Updater.Init(updates); err != nil {
 		log.Fatal(err)
 	}
 

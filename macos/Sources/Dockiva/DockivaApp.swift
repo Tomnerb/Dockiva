@@ -5,17 +5,20 @@ import SwiftUI
 struct DockivaApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
     @State private var model = AppModel()
+    @State private var updates = UpdateCenter()
 
     var body: some Scene {
         Window("Dockiva", id: "main") {
             RootView()
                 .environment(model)
+                .environment(updates)
                 .frame(minWidth: 1080, minHeight: 700)
                 .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in model.stop() }
         }
         .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 1300, height: 860)
         .commands {
+            UpdateCommands(updates: updates)
             CommandGroup(replacing: .newItem) {}
             CommandGroup(after: .toolbar) {
                 Button("Refresh") { Task { await model.refreshAll() } }.keyboardShortcut("r")
@@ -30,7 +33,7 @@ struct DockivaApp: App {
         MenuBarExtra {
             MenuBarPanel().environment(model)
         } label: {
-            MenuBarLabel().environment(model)
+            MenuBarLabel().environment(model).environment(updates)
         }
         .menuBarExtraStyle(.window)
 
@@ -44,13 +47,18 @@ struct DockivaApp: App {
 /// starts the core and opens the main window.
 struct MenuBarLabel: View {
     @Environment(AppModel.self) private var model
+    @Environment(UpdateCenter.self) private var updates
     @Environment(\.openWindow) private var openWindow
+    @Environment(\.dismissWindow) private var dismissWindow
 
     var body: some View {
         Image(systemName: model.runningCount > 0 ? "shippingbox.fill" : "shippingbox")
             .task {
-                openWindow(id: "main")
+                // --hidden (login launch) or the start-hidden setting keep Dockiva in the menu bar.
+                if shouldOpenWindowAtLaunch(settings: nil) { openWindow(id: "main") } else { dismissWindow(id: "main") }
                 await model.start()
+                if !shouldOpenWindowAtLaunch(settings: model.settings) { dismissWindow(id: "main") }
+                updates.start(model)
             }
     }
 }
@@ -61,16 +69,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 }
 
 enum SidebarItem: String, CaseIterable, Identifiable {
-    case overview, containers, images, volumes, networks, engine
+    case overview, containers, compose, images, volumes, networks, storage, migration, engine
     var id: String { rawValue }
 
     var title: String {
         switch self {
         case .overview: "Overview"
         case .containers: "Containers"
+        case .compose: "Compose"
         case .images: "Images"
         case .volumes: "Volumes"
         case .networks: "Networks"
+        case .storage: "Storage"
+        case .migration: "Migrate"
         case .engine: "Engine"
         }
     }
@@ -79,9 +90,12 @@ enum SidebarItem: String, CaseIterable, Identifiable {
         switch self {
         case .overview: "sparkles"
         case .containers: "shippingbox.fill"
+        case .compose: "square.stack.3d.forward.dottedline"
         case .images: "square.stack.3d.up.fill"
         case .volumes: "externaldrive.fill"
         case .networks: "network"
+        case .storage: "internaldrive.fill"
+        case .migration: "square.and.arrow.down.on.square.fill"
         case .engine: "bolt.horizontal.circle.fill"
         }
     }
@@ -90,9 +104,12 @@ enum SidebarItem: String, CaseIterable, Identifiable {
         switch self {
         case .overview: DockivaPalette.cyan
         case .containers: DockivaPalette.teal
+        case .compose: .purple
         case .images: DockivaPalette.blue
         case .volumes: .indigo
         case .networks: .mint
+        case .storage: DockivaPalette.blue
+        case .migration: .pink
         case .engine: .orange
         }
     }
@@ -100,6 +117,7 @@ enum SidebarItem: String, CaseIterable, Identifiable {
 
 struct RootView: View {
     @Environment(AppModel.self) private var model
+    @Environment(UpdateCenter.self) private var updates
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var section: SidebarItem { model.section ?? .overview }
@@ -131,6 +149,7 @@ struct RootView: View {
             .animation(reduceMotion ? nil : .easeInOut(duration: 0.22), value: section)
         }
         .preferredColorScheme(.dark)
+        .sheet(isPresented: Bindable(updates).sheetPresented) { UpdateSheet().environment(updates) }
         .alert("Action failed", isPresented: Binding(get: { model.lastError != nil }, set: { if !$0 { model.lastError = nil } })) {
             Button("OK") { model.lastError = nil }
         } message: {
@@ -142,15 +161,20 @@ struct RootView: View {
         switch section {
         case .overview: OverviewView()
         case .containers: ContainersView()
+        case .compose: ComposeProjectsView()
         case .images: ImagesView()
         case .volumes: VolumesView()
         case .networks: NetworksView()
-        case .engine: EngineView()
+        case .storage: StorageView()
+        case .migration: MigrationView()
+        case .engine: EngineSettingsView()
         }
     }
 }
 
 struct SidebarView: View {
+    /// Shown as compact rows at the bottom, as MacDoctor does with its utilities.
+    static let utilities: [SidebarItem] = [.storage, .migration, .engine]
     @Environment(AppModel.self) private var model
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Namespace private var selection
@@ -160,11 +184,15 @@ struct SidebarView: View {
         VStack(alignment: .leading, spacing: 0) {
             brand
             VStack(spacing: 8) {
-                ForEach(SidebarItem.allCases.filter { $0 != .engine }) { row($0) }
+                ForEach(SidebarItem.allCases.filter { !Self.utilities.contains($0) }) { row($0) }
             }
             .padding(.horizontal, 16)
             Spacer(minLength: 20)
-            row(.engine, compact: true).padding(.horizontal, 16)
+            VStack(spacing: 6) {
+                ForEach(Self.utilities) { row($0, compact: true) }
+            }
+            .padding(.horizontal, 16)
+            UpdateBanner().padding([.horizontal, .top], 16)
             engineStatus.padding(16)
         }
     }
@@ -187,6 +215,7 @@ struct SidebarView: View {
     private func count(_ item: SidebarItem) -> Int? {
         switch item {
         case .containers: model.containers.count
+        case .compose: Set(model.containers.compactMap(\.composeProject)).count
         case .images: model.images.count
         case .volumes: model.volumes.count
         case .networks: model.networks.count

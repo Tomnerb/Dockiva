@@ -24,6 +24,7 @@ final class AppModel {
     private(set) var core: CoreClient?
     private var process: CoreProcess?
     private var streamHandlers: [String: (StreamOutputEvent) -> Void] = [:]
+    private var eventHandlers: [String: [(Data) -> Void]] = [:]
     private var earlyOutput: [String: [StreamOutputEvent]] = [:]  // before the stream's ID returned
     private var refreshQueued = false
 
@@ -73,16 +74,26 @@ final class AppModel {
 
     func refreshResources() async {
         guard let core else { return }
-        async let containers = try? core.call("DockerService.ListContainers", as: [ContainerInfo]?.self)
-        async let images = try? core.call("DockerService.ListImages", as: [ImageInfo]?.self)
-        async let volumes = try? core.call("DockerService.ListVolumes", as: [VolumeInfo]?.self)
-        async let networks = try? core.call("DockerService.ListNetworks", as: [NetworkInfo]?.self)
+        async let containers = list(core, "DockerService.ListContainers", of: ContainerInfo.self)
+        async let images = list(core, "DockerService.ListImages", of: ImageInfo.self)
+        async let volumes = list(core, "DockerService.ListVolumes", of: VolumeInfo.self)
+        async let networks = list(core, "DockerService.ListNetworks", of: NetworkInfo.self)
         async let status = try? core.call("DockerService.Status", as: DockerStatus.self)
-        if let c = await containers { self.containers = (c ?? []).sorted { ($0.composeProject ?? "", $0.name) < ($1.composeProject ?? "", $1.name) } }
-        if let i = await images { self.images = i ?? [] }
-        if let v = await volumes { self.volumes = v ?? [] }
-        if let n = await networks { self.networks = n ?? [] }
+        if let c = await containers { self.containers = c.sorted { ($0.composeProject ?? "", $0.name) < ($1.composeProject ?? "", $1.name) } }
+        if let i = await images { self.images = i }
+        if let v = await volumes { self.volumes = v }
+        if let n = await networks { self.networks = n }
         self.status = await status
+    }
+
+    /// A list from the core: empty for a null list, nil when the call fails (the
+    /// screen keeps what it shows).
+    private nonisolated func list<T: Decodable>(_ core: CoreClient, _ method: String, _ args: [any Encodable] = [], of _: T.Type) async -> [T]? {
+        do {
+            return try await core.call(method, args, as: [T]?.self) ?? []
+        } catch {
+            return nil
+        }
     }
 
     /// Coalesces bursts of Docker events into one refresh.
@@ -113,6 +124,9 @@ final class AppModel {
             default:
                 break
             }
+            for handler in eventHandlers[event.name] ?? [] {
+                handler(event.data)
+            }
         }
         phase = .failed("The Dockiva core stopped. See ~/Library/Logs/Dockiva/core.log.")
     }
@@ -120,8 +134,8 @@ final class AppModel {
     private func pollStats() async {
         while !Task.isCancelled, let core {
             let running = containers.filter(\.isRunning).map(\.id)
-            if !running.isEmpty, let list = try? await core.call("DockerService.GetContainerStats", [running], as: [ContainerResourceStats]?.self) {
-                stats = Dictionary((list ?? []).map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+            if !running.isEmpty, let list = await list(core, "DockerService.GetContainerStats", [running], of: ContainerResourceStats.self) {
+                stats = Dictionary(list.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
             }
             try? await Task.sleep(for: .seconds(3))
         }
@@ -183,6 +197,11 @@ final class AppModel {
             lastError = error.localizedDescription
             return nil
         }
+    }
+
+    /// Runs handler with each core event of that name (its JSON data), on the main actor.
+    func onEvent(name: String, handler: @escaping (Data) -> Void) {
+        eventHandlers[name, default: []].append(handler)
     }
 
     // MARK: Streams (logs and terminals)

@@ -3,8 +3,8 @@
 A SwiftUI front end for Dockiva. Engine management, settings and Docker access
 stay in Go: the app starts the Go core (`dockiva --core SOCKET`) and calls the
 same services the Wails window binds, over a unix socket (see
-[`core_api.go`](../core_api.go) for the protocol). The Wails app keeps shipping
-until this one reaches parity.
+[`core_api.go`](../core_api.go) for the protocol). Since v0.5 it is the app macOS
+releases ship (macOS 14 or later); Windows and Linux keep the Wails app.
 
 ```
 Dockiva.app/Contents/
@@ -31,25 +31,34 @@ of the bundled one. Core output goes to `~/Library/Logs/Dockiva/core.log`.
 Tests: `swift test --package-path macos` (Swift client) and `go test -run CoreAPI .`
 (the core API).
 
+## Releases
+
+`scripts/build-macos.sh` builds the Wails bundle for its Go program and
+resources, then makes it this app: the Go executable becomes
+`Contents/MacOS/dockiva-core`, the Swift build becomes `Contents/MacOS/Dockiva`,
+and `Info.plist` points at it (same bundle identifier, so v0.4 installs update
+into it). Signing, notarization, the DMG and the updater archive are unchanged.
+Updates run through the core (`AppService.CheckForUpdates` / `ApplyUpdate`):
+Wails' swap helper replaces the bundle after the core announces
+`dockiva:quit-for-update` and the app quits.
+
 ## Status
 
 Done:
 
-- Containers: list with live CPU and memory, published ports as links, filter,
-  start, stop, restart, remove; logs and a line-mode terminal in an inspector.
-- Images (pull, remove), volumes (create, remove, show in Finder), networks
-  (create, remove).
-- Engine: state, start and stop, endpoint and `DOCKER_HOST` hint.
-- Menu bar item: running count, start and stop per container, open ports.
-- Settings: start the engine on launch, reconnect automatically.
-- View menu shortcuts: ⌘1–⌘5 for the sections, ⌘R to refresh.
+- Overview, containers (live usage, ports, logs, a line-mode terminal, details:
+  environment, mounts, networks, labels), Compose projects (up, build, rebuild,
+  start, stop, restart, down, import by file, folder or drag and drop), images,
+  volumes, networks.
+- Engine settings (backend selection, external endpoint, start and stop),
+  storage (disk usage, prune, engine data folders), migration from Docker
+  Desktop or OrbStack.
+- Updates (check on launch and daily, Check for Updates…, install and relaunch),
+  open at login, start hidden in the menu bar, menu bar panel.
 
-Still in the Wails app only:
+Not yet:
 
-- Compose projects: grouping, up, down and restart, importing a compose file or folder.
-- Container details (environment, mounts, networks).
-- A full terminal emulator (the Wails app uses xterm.js; SwiftTerm is the native option).
-- Engine settings: backend selection, external endpoints, deleting the engine.
-- Migration from Docker Desktop or OrbStack, disk usage and prune, host container storage.
-- Updates and start at login (Wails' updater and autostart; native: Sparkle or
-  a GitHub release check, and `SMAppService`).
+- A full terminal emulator (the terminal is line-oriented; SwiftTerm would add
+  one but is a new dependency).
+- With Dockiva Engine: disk usage (the engine has no `/system/df`), migration
+  into it, and stopping or deleting it from the app.

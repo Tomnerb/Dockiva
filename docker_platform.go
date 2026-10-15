@@ -715,10 +715,6 @@ func (s *DockerService) SelectComposeFolder() (string, error) {
 }
 
 func (s *DockerService) ImportComposePath(inputPath string) (ComposeImportResult, error) {
-	if _, ok := s.currentRuntime().(*vmfreeRuntime); ok {
-		return ComposeImportResult{}, errors.New("Compose unsupported by Dockiva Engine")
-	}
-
 	inputPath = strings.TrimSpace(inputPath)
 	if inputPath == "" {
 		return ComposeImportResult{}, errors.New("compose path is required")
@@ -752,7 +748,7 @@ func (s *DockerService) ImportComposePath(inputPath string) (ComposeImportResult
 
 	args = append(args, "up", "-d")
 
-	output, err := runDockerCLI(30*time.Minute, workingDir, args...)
+	output, err := s.composeCLI(30*time.Minute, workingDir, args...)
 	if err != nil {
 		return ComposeImportResult{
 			Project:     project,

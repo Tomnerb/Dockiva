@@ -23,8 +23,10 @@ import (
 	"path/filepath"
 	"reflect"
 	"sync"
+	"time"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
+	"github.com/wailsapp/wails/v3/pkg/updater"
 )
 
 type coreEvent struct {
@@ -216,6 +218,14 @@ func runCore(socket string, dockerService *DockerService, appService *AppService
 		log.Fatal(err)
 	}
 	go dockerService.AutoRecoverEngine(settings.EngineBackend, settings.WSLDistro, settings.AutoReconnectEngine, settings.StartEngineOnLaunch)
+	if updates, err := updaterConfig(); err != nil {
+		log.Printf("core updater: %v", err)
+	} else {
+		coreUpdater = updater.New(coreUpdateHost{quit: cancel})
+		if err := coreUpdater.Init(updates); err != nil {
+			log.Printf("core updater: %v", err)
+		}
+	}
 	go func() {
 		_, _ = io.Copy(io.Discard, os.Stdin)
 		cancel()
@@ -231,6 +241,27 @@ func runCore(socket string, dockerService *DockerService, appService *AppService
 }
 
 // argValue is the argument after name on the command line (dockiva --core SOCKET).
+// coreUpdateHost is the updater's host in the core: updater events go to the
+// front end, and Quit (after the swap helper starts) tells the front end to quit
+// before the core exits, so the helper can replace Dockiva.app.
+type coreUpdateHost struct{ quit func() }
+
+func (coreUpdateHost) Emit(name string, data ...any) bool {
+	var payload any = data
+	if len(data) == 1 {
+		payload = data[0]
+	}
+	emitEvent(name, payload)
+	return true
+}
+func (coreUpdateHost) OnEvent(string, func(any)) func()                      { return func() {} }
+func (coreUpdateHost) OpenWindow(updater.WindowOptions) updater.WindowHandle { return nil } // Window: WindowNone
+func (h coreUpdateHost) Quit() {
+	emitEvent("dockiva:quit-for-update", nil)
+	time.Sleep(300 * time.Millisecond) // the event reaches the front end before the connection closes
+	h.quit()
+}
+
 func argValue(name string) (string, bool) { return argAfter(os.Args, name) }
 
 func argAfter(args []string, name string) (string, bool) {

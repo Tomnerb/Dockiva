@@ -238,15 +238,17 @@ struct ContainerDetail: View {
     private var console: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                SectionTitle(title: tab == "logs" ? "Logs" : "Terminal",
-                             detail: tab == "logs" ? "Live output, last 500 lines" : "A shell inside the container",
-                             symbol: tab == "logs" ? "text.alignleft" : "terminal")
+                SectionTitle(title: tab == "logs" ? "Logs" : tab == "terminal" ? "Terminal" : "Details",
+                             detail: tab == "logs" ? "Live output, last 500 lines" : tab == "terminal" ? "A shell inside the container" : "Environment, mounts, networks and labels",
+                             symbol: tab == "logs" ? "text.alignleft" : tab == "terminal" ? "terminal" : "info.circle")
                 Spacer()
-                FilterPills(choices: [("Logs", "logs"), ("Terminal", "terminal")], selection: $tab)
+                FilterPills(choices: [("Logs", "logs"), ("Terminal", "terminal"), ("Details", "details")], selection: $tab)
             }
             Group {
                 if tab == "logs" {
                     LogsView(containerID: container.id)
+                } else if tab == "details" {
+                    ContainerDetailsView(containerID: container.id)
                 } else if container.isRunning {
                     TerminalView(containerID: container.id)
                 } else {

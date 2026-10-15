@@ -534,10 +534,6 @@ func (s *DockerService) RemoveContainer(containerID string, force bool) error {
 }
 
 func (s *DockerService) ComposeProjectAction(project string, action string) error {
-	if _, ok := s.currentRuntime().(*vmfreeRuntime); ok {
-		return errors.New("operation unsupported by Dockiva Engine")
-	}
-
 	project = strings.TrimSpace(project)
 	action = strings.ToLower(strings.TrimSpace(action))
 
@@ -554,7 +550,12 @@ func (s *DockerService) ComposeProjectAction(project string, action string) erro
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	result, err := s.client.Load().ContainerList(
+	cli, done, err := s.composeClient()
+	if err != nil {
+		return err
+	}
+	defer done()
+	result, err := cli.ContainerList(
 		ctx,
 		client.ContainerListOptions{
 			All: true,
@@ -616,14 +617,14 @@ func (s *DockerService) ComposeProjectAction(project string, action string) erro
 
 			switch action {
 			case "start":
-				_, actionErr = s.client.Load().ContainerStart(
+				_, actionErr = cli.ContainerStart(
 					ctx,
 					target.id,
 					client.ContainerStartOptions{},
 				)
 
 			case "stop":
-				_, actionErr = s.client.Load().ContainerStop(
+				_, actionErr = cli.ContainerStop(
 					ctx,
 					target.id,
 					client.ContainerStopOptions{
@@ -632,7 +633,7 @@ func (s *DockerService) ComposeProjectAction(project string, action string) erro
 				)
 
 			case "restart":
-				_, actionErr = s.client.Load().ContainerRestart(
+				_, actionErr = cli.ContainerRestart(
 					ctx,
 					target.id,
 					client.ContainerRestartOptions{

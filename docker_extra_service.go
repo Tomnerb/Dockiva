@@ -1051,10 +1051,6 @@ func (s *DockerService) GetContainerDetails(containerID string) (ContainerDetail
 }
 
 func (s *DockerService) GetComposeProjectDetails(project string) (ComposeProjectDetails, error) {
-	if _, ok := s.currentRuntime().(*vmfreeRuntime); ok {
-		return ComposeProjectDetails{}, errors.New("operation unsupported by Dockiva Engine")
-	}
-
 	project = strings.TrimSpace(project)
 	if project == "" {
 		return ComposeProjectDetails{}, errors.New("compose project name is required")
@@ -1063,7 +1059,12 @@ func (s *DockerService) GetComposeProjectDetails(project string) (ComposeProject
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	result, err := s.client.Load().ContainerList(
+	cli, done, err := s.composeClient()
+	if err != nil {
+		return ComposeProjectDetails{}, err
+	}
+	defer done()
+	result, err := cli.ContainerList(
 		ctx,
 		client.ContainerListOptions{
 			All: true,
@@ -1108,10 +1109,6 @@ func (s *DockerService) GetComposeProjectDetails(project string) (ComposeProject
 }
 
 func (s *DockerService) RunComposeCommand(project string, action string) (DockerCLIResult, error) {
-	if _, ok := s.currentRuntime().(*vmfreeRuntime); ok {
-		return DockerCLIResult{}, errors.New("operation unsupported by Dockiva Engine")
-	}
-
 	action = strings.ToLower(strings.TrimSpace(action))
 
 	switch action {
@@ -1168,7 +1165,7 @@ func (s *DockerService) RunComposeCommand(project string, action string) (Docker
 		buildArgs := append([]string{}, args...)
 		buildArgs = append(buildArgs, "--progress", "plain", "build")
 
-		buildResult, err := runDockerCLI(30*time.Minute, meta.WorkingDir, buildArgs...)
+		buildResult, err := s.composeCLI(30*time.Minute, meta.WorkingDir, buildArgs...)
 		if err != nil {
 			return DockerCLIResult{Output: buildResult}, err
 		}
@@ -1176,13 +1173,13 @@ func (s *DockerService) RunComposeCommand(project string, action string) (Docker
 		upArgs := append([]string{}, args...)
 		upArgs = append(upArgs, "up", "-d")
 
-		upResult, err := runDockerCLI(10*time.Minute, meta.WorkingDir, upArgs...)
+		upResult, err := s.composeCLI(10*time.Minute, meta.WorkingDir, upArgs...)
 		output := strings.TrimSpace(buildResult + "\n" + upResult)
 
 		return DockerCLIResult{Output: output}, err
 	}
 
-	output, err := runDockerCLI(30*time.Minute, meta.WorkingDir, args...)
+	output, err := s.composeCLI(30*time.Minute, meta.WorkingDir, args...)
 	return DockerCLIResult{Output: output}, err
 }
 
@@ -1355,6 +1352,32 @@ func runDockerCLI(timeout time.Duration, dir string, args ...string) (string, er
 }
 
 func runDockerCLIAtEndpoint(timeout time.Duration, dir string, endpoint string, args ...string) (string, error) {
+	return runDockerCLIEnv(timeout, dir, endpoint, nil, args...)
+}
+
+// composeClient is a Docker client for the active engine: Dockiva Engine's own
+// Docker socket, or the configured endpoint. done releases it.
+func (s *DockerService) composeClient() (cli *client.Client, done func(), err error) {
+	if r, ok := s.currentRuntime().(*vmfreeRuntime); ok {
+		cli, err := client.New(client.WithHost("unix://"+filepath.Join(r.home, "docker.sock")), client.WithVersion("1.45"), client.WithUserAgent("dockiva/0.9.0"))
+		if err != nil {
+			return nil, nil, err
+		}
+		return cli, func() { _ = cli.Close() }, nil
+	}
+	return s.client.Load(), func() {}, nil
+}
+
+// composeCLI runs docker compose against the active engine. Dockiva Engine builds
+// with Docker's classic builder (it has no BuildKit), so builds go that way.
+func (s *DockerService) composeCLI(timeout time.Duration, dir string, args ...string) (string, error) {
+	if r, ok := s.currentRuntime().(*vmfreeRuntime); ok {
+		return runDockerCLIEnv(timeout, dir, "unix://"+filepath.Join(r.home, "docker.sock"), []string{"DOCKER_BUILDKIT=0"}, args...)
+	}
+	return runDockerCLI(timeout, dir, args...)
+}
+
+func runDockerCLIEnv(timeout time.Duration, dir string, endpoint string, env []string, args ...string) (string, error) {
 	dockerPath, err := dockerCLIPath()
 	if err != nil {
 		return "", errors.New("docker CLI was not found")
@@ -1375,10 +1398,10 @@ func runDockerCLIAtEndpoint(timeout time.Duration, dir string, endpoint string, 
 		}
 	}
 
-	cmd.Env = append(
+	cmd.Env = append(append(
 		os.Environ(),
 		"COMPOSE_MENU=false",
-	)
+	), env...)
 
 	outputBytes, runErr := cmd.CombinedOutput()
 	output := strings.TrimSpace(string(outputBytes))
