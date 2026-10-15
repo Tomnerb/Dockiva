@@ -46,19 +46,21 @@ Wails' swap helper replaces the bundle after the core announces
 
 Done:
 
-- Overview, containers (live usage, ports, logs, a line-mode terminal, details:
+- Overview, containers (live usage, ports, logs, a full terminal (SwiftTerm), details:
   environment, mounts, networks, labels), Compose projects (up, build, rebuild,
   start, stop, restart, down, import by file, folder or drag and drop), images,
   volumes, networks.
-- Engine settings (backend selection, external endpoint, start and stop),
-  storage (disk usage, prune, engine data folders), migration from Docker
-  Desktop or OrbStack.
+- Engine settings (backend selection, external endpoint, start, stop and
+  delete, Dockiva Engine included), storage (disk usage, prune, engine data
+  folders), migration from Docker Desktop or OrbStack into Dockiva Engine or the
+  VM (images, volumes, containers).
 - Updates (check on launch and daily, Check for Updates…, install and relaunch),
   open at login, start hidden in the menu bar, menu bar panel.
 
 Not yet:
 
-- A full terminal emulator (the terminal is line-oriented; SwiftTerm would add
-  one but is a new dependency).
-- With Dockiva Engine: disk usage (the engine has no `/system/df`), migration
-  into it, and stopping or deleting it from the app.
+- Container terminals carry UTF-8 only: a multi-byte character split across the
+  core's 32 KB reads, or non-UTF-8 output, shows as U+FFFD. `top` needs
+  `/proc/stat`, which Dockiva Engine does not provide yet.
+- Migration copies volumes while the source runs (a running database may copy
+  inconsistently) and skips running containers and non-arm64 images.
