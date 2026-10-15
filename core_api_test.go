@@ -95,3 +95,23 @@ func TestCoreAPIRoundTrip(t *testing.T) {
 		t.Fatal("event not delivered")
 	}
 }
+
+// A plain launch (no arguments, as from Finder) must not panic: v0.4.0 did.
+func TestArgAfter(t *testing.T) {
+	for _, c := range []struct {
+		args  []string
+		value string
+		ok    bool
+	}{
+		{[]string{"dockiva"}, "", false},
+		{[]string{}, "", false},
+		{[]string{"dockiva", "--core"}, "", false},
+		{[]string{"dockiva", "--hidden"}, "", false},
+		{[]string{"dockiva", "--core", "/tmp/s"}, "/tmp/s", true},
+		{[]string{"dockiva", "--hidden", "--core", "/tmp/s"}, "/tmp/s", true},
+	} {
+		if v, ok := argAfter(c.args, "--core"); v != c.value || ok != c.ok {
+			t.Fatalf("%v: %q %v", c.args, v, ok)
+		}
+	}
+}
