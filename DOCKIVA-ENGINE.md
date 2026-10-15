@@ -123,7 +123,7 @@ This section supersedes older capability statements further down the page.
   `munmap` and `MADV_DONTNEED` return memory; a process over the limit is killed
   with a fault rather than an OOM kill); 64 running containers
   (`dockiva-engine --max-containers`). Files are capped at 1 TiB each; the
-  Mac's disk is the only storage limit. Executables up to 512 MiB.
+  Mac's disk is the only storage limit. `fsync` is an ordered-write barrier by default (crash-consistent, OrbStack-like); `dockiva-engine --fsync full` makes it strictly durable, `--fsync fast` fastest. Executables up to 512 MiB.
 - **Performance.** A container gets one vCPU per Mac CPU (`--cpus`, set by the
   engine). Processes and the threads of one process run in parallel: every
   thread is scheduled on its own, sharing its process's page tables, and the
