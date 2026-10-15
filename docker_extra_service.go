@@ -1377,8 +1377,8 @@ func (s *DockerService) composeClient() (cli *client.Client, done func(), err er
 	return s.client.Load(), func() {}, nil
 }
 
-// composeCLI runs the docker CLI (compose, system df, prune) against the active engine. Dockiva Engine builds
-// with Docker's classic builder (it has no BuildKit), so builds go that way.
+// composeCLI runs the docker CLI (compose, system df, prune) against the active engine. Builds on Dockiva
+// Engine use the classic builder API, which works even when the docker CLI has no buildx plugin.
 func (s *DockerService) composeCLI(timeout time.Duration, dir string, args ...string) (string, error) {
 	if r, ok := s.currentRuntime().(*vmfreeRuntime); ok {
 		return runDockerCLIEnv(timeout, dir, "unix://"+filepath.Join(r.home, "docker.sock"), []string{"DOCKER_BUILDKIT=0"}, args...)

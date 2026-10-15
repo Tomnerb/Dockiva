@@ -40,8 +40,9 @@ This section supersedes older capability statements further down the page.
   `docker context use dockiva`, `docker run` (foreground or `-d`, `-i`, `-t`,
   `--rm`, `-p`, `-e`, `-u`, `-m`, `--cpus`, `-v`, `--mount`, `--read-only`,
   `--network`, `--restart`, `--health-*`), `exec` (`-it`, `-u`, `-w`, `-e`, `-d`),
-  `attach`, `logs -f`, `kill`, `wait`, `events`, `ps`, `inspect`, `cp`, `stats`,
-  `pull`, `tag`, `rmi`, `rm`, `docker volume`, `docker network` and
+  `attach`, `logs` (`-f`, `-t`, `--since`, `--until`, `--tail`), `kill`, `wait`,
+  `events`, `ps`, `inspect`, `cp`, `stats`, `top`, `pause`, `unpause`, `pull`,
+  `tag`, `rmi`, `rm`, `docker volume`, `docker network` and
   `docker compose` (`up`, `down`, `ps`, `logs`, `exec`, `stop`, `start`,
   `restart`, with healthchecks and `depends_on` conditions) work with the plain
   docker CLI. `-t` gives a pseudo-terminal (line editing, ^C to the foreground
@@ -59,11 +60,13 @@ This section supersedes older capability statements further down the page.
   `STOPSIGNAL`, `--target`, `-t`, `-q`, `.dockerignore`, `docker build - <
   Dockerfile`, and `docker compose build` / `up --build`. An image is its base
   image's layers plus one layer of the build's changes; an untagged build is
-  found by its ID (`docker run <id>`). Docker CLI 23 and later send builds to
-  BuildKit (buildx) unless `DOCKER_BUILDKIT=0` is set, so set it for builds:
-  `export DOCKER_BUILDKIT=0`. Not yet: BuildKit features (`RUN --mount`,
-  heredocs, secrets), a step cache (every build runs every step), xz archives
-  in `ADD`.
+  found by its ID (`docker run <id>`). Unchanged steps come from a step cache
+  (`--no-cache` skips it, `docker builder prune` clears it). Plain `docker build`
+  on Docker CLI 23 and later works through buildx's built-in `docker` driver (the
+  engine answers its BuildKit API with the same builder); `DOCKER_BUILDKIT=0`
+  also works. Not yet: BuildKit-only features (`RUN --mount`, heredocs, secrets,
+  `--build-context`, `--output` other than the image store, `--push`), Git or URL
+  build contexts, xz archives in `ADD`.
 - **Mounts and volumes.** `-v /host/path:/path[:ro]` binds a host directory or a
   single file; `-v name:/path` and `-v /path` use named and anonymous volumes
   stored in `~/.dockiva-engine/volumes`. A new volume first receives the image's content
@@ -90,13 +93,16 @@ This section supersedes older capability statements further down the page.
   thread-directed signals; `docker stop` sends the image's `StopSignal` to PID 1
   and kills after 10 s. Shared memory (`MAP_SHARED` anonymous and System V),
   cross-process futexes, `signalfd`, `eventfd`, `timerfd`, `rt_sigtimedwait`
-  (tini), named pipes (`mkfifo`), `setsid`, `/proc/self/exe`, `/dev/fd/N`, and
-  `/proc` files for each process (`stat`, `statm`, `status`) and the container
-  (`cpuinfo`, `meminfo`, `mounts`).
+  (tini), named pipes (`mkfifo`), `setsid` and sessions, `/proc/self/exe`,
+  `/dev/fd/N`, setuid/setgid/sticky mode bits, and `/proc` files for each process
+  (`stat`, `statm`, `status`, `task/`, with real CPU time and resident memory)
+  and the container (`stat`, `meminfo`, `vmstat`, `loadavg`, `uptime`,
+  `cpuinfo`, `mounts`), so `top`, `htop`, `ps`, `free`, `uptime`, `vmstat` and
+  `pgrep` work. .NET SDK builds (MSBuild with worker nodes) run in `docker run`.
   Descriptors take the lowest free number; unknown system calls return `ENOSYS`.
 - **Limits:** 64 live processes per container and 128 threads per process; up to
   1024 sockets, 1024 files and 509 pipe/epoll descriptors per process (guests see
-  `RLIMIT_NOFILE` 4096), 64 pipes and 128 `signalfd`s per container, 4096 host
+  `RLIMIT_NOFILE` 4096), 1024 pipes and 128 `signalfd`s per container, 4096 host
   descriptors per container; 8 MiB stacks; a memory limit per container (`-m`,
   6 MiB to 64 GiB; 2 GiB by default), charged as pages are first written and
   reported by `free` and `/proc/meminfo` (a 12 GiB mmap arena per process, with
