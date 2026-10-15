@@ -353,3 +353,28 @@ func TestLegacyEngineHomeMigration(t *testing.T) {
 		t.Fatal("after the move ~/.dockiva-engine is the home")
 	}
 }
+
+func TestDeleteStoppedDockivaEngine(t *testing.T) {
+	home, err := os.MkdirTemp("", "dd-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(home)
+	t.Setenv("HOME", home)
+	engineDir, legacy := filepath.Join(home, ".dockiva-engine"), filepath.Join(home, ".vmfree")
+	if err := os.MkdirAll(filepath.Join(engineDir, "images"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(engineDir, legacy); err != nil {
+		t.Fatal(err)
+	}
+	if err := deleteDockivaEngine(vmfreeAt(engineDir)); err != nil { // not running: nothing to stop
+		t.Fatal(err)
+	}
+	if _, err := os.Lstat(engineDir); !os.IsNotExist(err) {
+		t.Fatal("engine state kept")
+	}
+	if _, err := os.Lstat(legacy); !os.IsNotExist(err) {
+		t.Fatal("~/.vmfree link kept")
+	}
+}

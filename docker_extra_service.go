@@ -1256,11 +1256,7 @@ func (s *DockerService) CreateNetwork(name string, driver string) (DockerCLIResu
 }
 
 func (s *DockerService) GetDiskUsage() ([]DockerDiskUsageItem, error) {
-	if _, ok := s.currentRuntime().(*vmfreeRuntime); ok {
-		return nil, errors.New("resource accounting unavailable for Dockiva Engine")
-	}
-
-	output, err := runDockerCLI(
+	output, err := s.composeCLI(
 		2*time.Minute,
 		"",
 		"system", "df",
@@ -1311,10 +1307,6 @@ func (s *DockerService) GetDiskUsage() ([]DockerDiskUsageItem, error) {
 }
 
 func (s *DockerService) PruneDocker(scope string) (DockerCLIResult, error) {
-	if _, ok := s.currentRuntime().(*vmfreeRuntime); ok {
-		return DockerCLIResult{}, errors.New("operation unsupported by Dockiva Engine")
-	}
-
 	scope = strings.ToLower(strings.TrimSpace(scope))
 
 	var args []string
@@ -1343,7 +1335,7 @@ func (s *DockerService) PruneDocker(scope string) (DockerCLIResult, error) {
 		return DockerCLIResult{}, fmt.Errorf("unsupported prune scope: %s", scope)
 	}
 
-	output, err := runDockerCLI(10*time.Minute, "", args...)
+	output, err := s.composeCLI(10*time.Minute, "", args...)
 	return DockerCLIResult{Output: output}, err
 }
 
@@ -1368,7 +1360,7 @@ func (s *DockerService) composeClient() (cli *client.Client, done func(), err er
 	return s.client.Load(), func() {}, nil
 }
 
-// composeCLI runs docker compose against the active engine. Dockiva Engine builds
+// composeCLI runs the docker CLI (compose, system df, prune) against the active engine. Dockiva Engine builds
 // with Docker's classic builder (it has no BuildKit), so builds go that way.
 func (s *DockerService) composeCLI(timeout time.Duration, dir string, args ...string) (string, error) {
 	if r, ok := s.currentRuntime().(*vmfreeRuntime); ok {

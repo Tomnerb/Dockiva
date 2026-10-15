@@ -31,11 +31,13 @@ struct EngineSettingsView: View {
             .padding(28)
         }
         .task { await reload() }
-        .confirmationDialog("Delete the Dockiva Linux VM?", isPresented: $confirmDelete, titleVisibility: .visible) {
-            Button("Delete VM", role: .destructive) { Task { await deleteEngine() } }
+        .confirmationDialog(backend == "vmfree" ? "Delete Dockiva Engine's data?" : "Delete the Dockiva Linux VM?", isPresented: $confirmDelete, titleVisibility: .visible) {
+            Button(backend == "vmfree" ? "Delete Data" : "Delete VM", role: .destructive) { Task { await deleteEngine() } }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("This deletes the VM's disk with every container, image and volume stored in it. Other Docker engines are not touched.")
+            Text(backend == "vmfree"
+                 ? "This deletes every container, image and volume in Dockiva Engine (~/.dockiva-engine). It starts empty next time. Other Docker engines are not touched."
+                 : "This deletes the VM's disk with every container, image and volume stored in it. Other Docker engines are not touched.")
         }
     }
 
@@ -52,15 +54,15 @@ struct EngineSettingsView: View {
                         Label(backend == "external" ? "Reconnect" : "Start engine", systemImage: "power")
                     }
                     .buttonStyle(PrimaryButtonStyle(color: accent))
-                } else if backend == "vz" {  // Go can stop only the VM; vmfree and external have no stop
+                } else if backend == "vz" || backend == "vmfree" {  // an external Docker is not Dockiva's to stop
                     Button { engineAction(start: false) } label: { Label("Stop engine", systemImage: "stop.fill") }
                         .buttonStyle(SecondaryButtonStyle())
                 }
-                if backend == "vz" && engine?.engineInstalled == true {
+                if backend == "vmfree" || backend == "vz" && engine?.engineInstalled == true {
                     Button { confirmDelete = true } label: { Image(systemName: "trash") }
                         .buttonStyle(SecondaryButtonStyle(destructive: true))
                         .disabled(running)
-                        .help(running ? "Stop the VM before deleting it" : "Delete the VM and its data")
+                        .help(running ? "Stop the engine before deleting it" : "Delete the engine and its data")
                 }
             }
             .disabled(working || engine?.supported == false)
