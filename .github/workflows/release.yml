@@ -136,6 +136,15 @@ jobs:
           name: macos-guest-arm64
           path: macos-guest
 
+      # The SwiftUI app (macos/) needs Swift 5.9 (Xcode 15) or later: use the newest Xcode.
+      - name: Select Xcode
+        shell: bash
+        run: |
+          set -euo pipefail
+          latest="$(ls -d /Applications/Xcode_*.app 2>/dev/null | grep -vi beta | sort -V | tail -1 || true)"
+          if [[ -n "$latest" ]]; then sudo xcode-select -s "$latest"; fi
+          swift --version
+
       - name: Install build dependencies
         run: |
           npm ci --prefix frontend

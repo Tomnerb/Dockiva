@@ -177,7 +177,7 @@ func (s *DockerService) StartDockerContainerMigration() DockerMigrationStatus {
 	s.migrationStatus = DockerMigrationStatus{
 		Kind:    "container",
 		State:   "running",
-		Message: "Preparing Docker containers for migration into Dockiva Native.",
+		Message: "Preparing Docker containers for migration into " + s.migrationTargetName() + ".",
 	}
 	s.migrationStarted = time.Now()
 	status := s.migrationStatus
@@ -245,13 +245,10 @@ func countImportedImages(message string) int {
 }
 
 func (s *DockerService) GetDockerMigrationPreview() DockerMigrationPreview {
-	if _, ok := s.currentRuntime().(*vmfreeRuntime); ok {
-		return DockerMigrationPreview{Message: "Migration into Dockiva Engine is not available yet."}
-	}
-
+	_, toEngine := s.currentRuntime().(*vmfreeRuntime)
 	preview := DockerMigrationPreview{
 		Endpoint:                 s.dockerMigrationSourceEndpoint(),
-		VolumeMigrationSupported: runtime.GOOS == "linux",
+		VolumeMigrationSupported: runtime.GOOS == "linux" || toEngine,
 	}
 	if preview.Endpoint == "" {
 		preview.Message = "No external Docker endpoint is configured. Select External Docker once or choose an endpoint below."
@@ -287,6 +284,9 @@ func (s *DockerService) GetDockerMigrationPreview() DockerMigrationPreview {
 	preview.Available = preview.Containers > 0 || preview.Images > 0 || preview.Volumes > 0
 	if preview.Available {
 		preview.Message = "Existing Docker resources were found. Migration is opt-in and leaves Docker unchanged until verification succeeds."
+		if toEngine {
+			preview.Message = "Existing Docker resources were found. Migration copies them and leaves Docker unchanged. Migrate images and volumes before containers; only linux/arm64 images run on Dockiva Engine."
+		}
 	} else {
 		preview.Message = "Docker is connected, but it has no containers, images, or volumes to migrate."
 	}
@@ -348,17 +348,29 @@ func (s *DockerService) dockerMigrationSourceClient() (*client.Client, error) {
 // namespace one at a time. This avoids a single giant archive, gives the user
 // meaningful progress, and never modifies the source Docker store.
 func (s *DockerService) MigrateDockerImages() (DockerCLIResult, error) {
-	if _, ok := s.currentRuntime().(*vmfreeRuntime); ok {
-		return DockerCLIResult{}, errors.New("operation unsupported by Dockiva Engine")
-	}
-
-	images, err := runDockerCLIAtEndpoint(30*time.Second, "", s.dockerMigrationSourceEndpoint(), "image", "ls", "--format", "{{.Repository}}:{{.Tag}}")
+	source := s.dockerMigrationSourceEndpoint()
+	images, err := runDockerCLIAtEndpoint(30*time.Second, "", source, "image", "ls", "--format", "{{.Repository}}:{{.Tag}}")
 	if err != nil {
 		return DockerCLIResult{}, err
 	}
 	refs := uniqueDockerImageRefs(validDockerImageRefs(strings.Fields(images)))
 	if len(refs) == 0 {
 		return DockerCLIResult{Output: "No Docker images to migrate."}, nil
+	}
+	// Dockiva Engine runs linux/arm64 only: skip other images instead of failing the run.
+	var skipped []string
+	if _, ok := s.currentRuntime().(*vmfreeRuntime); ok {
+		s.setDockerMigrationProgress(DockerMigrationStatus{Message: "Checking image platforms…", TotalImages: len(refs)})
+		refs, skipped = splitArm64Refs(refs, func(ref string) (string, error) {
+			return runDockerCLIAtEndpoint(30*time.Second, "", source, "image", "inspect", "--format", "{{.Architecture}}", ref)
+		})
+	}
+	skippedNote := ""
+	if len(skipped) > 0 {
+		skippedNote = fmt.Sprintf(" Skipped %d not built for linux/arm64: %s.", len(skipped), summarizeMigrationItems(skipped))
+	}
+	if len(refs) == 0 {
+		return DockerCLIResult{Output: "Imported 0 Docker image(s)." + skippedNote}, nil
 	}
 	s.setDockerMigrationProgress(DockerMigrationStatus{
 		Message:     "Preparing Docker images for migration…",
@@ -388,7 +400,7 @@ func (s *DockerService) MigrateDockerImages() (DockerCLIResult, error) {
 			CurrentImage:   label,
 		})
 	}
-	return DockerCLIResult{Output: fmt.Sprintf("Imported %d Docker image(s) into Dockiva Native.", len(refs))}, nil
+	return DockerCLIResult{Output: fmt.Sprintf("Imported %d Docker image(s) into %s.", len(refs), s.migrationTargetName()) + skippedNote}, nil
 }
 
 func (s *DockerService) migrateSingleDockerImage(parentCtx context.Context, dockerPath, ref string, index, total int) error {
@@ -434,10 +446,15 @@ func (s *DockerService) migrateSingleDockerImage(parentCtx context.Context, dock
 			CurrentImage:   shortMigrationImageRef(ref),
 		})
 	}
-	importErr := s.importDockerImagesToNative(importCtx, archivePath)
+	var importErr error
+	if r, ok := s.currentRuntime().(*vmfreeRuntime); ok {
+		_, importErr = runDockerCLIAtEndpoint(10*time.Minute, "", r.dockerHost(), "image", "load", "-i", archivePath)
+	} else {
+		importErr = s.importDockerImagesToNative(importCtx, archivePath)
+	}
 	importCancel()
 	if importErr != nil {
-		return fmt.Errorf("import Docker image %s into Dockiva Native: %w", ref, importErr)
+		return fmt.Errorf("import Docker image %s into %s: %w", ref, s.migrationTargetName(), importErr)
 	}
 
 	return nil
@@ -457,8 +474,8 @@ func validDockerImageRefs(refs []string) []string {
 // MigrateDockerVolumes copies local Docker named-volume data into Dockiva's
 // managed volume store. It never stops containers or deletes Docker volumes.
 func (s *DockerService) MigrateDockerVolumes() (DockerCLIResult, error) {
-	if _, ok := s.currentRuntime().(*vmfreeRuntime); ok {
-		return DockerCLIResult{}, errors.New("operation unsupported by Dockiva Engine")
+	if r, ok := s.currentRuntime().(*vmfreeRuntime); ok {
+		return s.migrateDockerVolumesToEngine(r)
 	}
 
 	output, err := runDockerCLIAtEndpoint(30*time.Second, "", s.dockerMigrationSourceEndpoint(), "volume", "ls", "-q")
@@ -503,8 +520,8 @@ func (s *DockerService) MigrateDockerVolumes() (DockerCLIResult, error) {
 
 // MigrateDockerContainers copies stopped Docker containers into Dockiva Native.
 func (s *DockerService) MigrateDockerContainers() (DockerCLIResult, error) {
-	if _, ok := s.currentRuntime().(*vmfreeRuntime); ok {
-		return DockerCLIResult{}, errors.New("operation unsupported by Dockiva Engine")
+	if r, ok := s.currentRuntime().(*vmfreeRuntime); ok {
+		return s.migrateDockerContainersToEngine(r)
 	}
 
 	activeRuntime := s.currentRuntime()
@@ -1051,10 +1068,6 @@ func (s *DockerService) GetContainerDetails(containerID string) (ContainerDetail
 }
 
 func (s *DockerService) GetComposeProjectDetails(project string) (ComposeProjectDetails, error) {
-	if _, ok := s.currentRuntime().(*vmfreeRuntime); ok {
-		return ComposeProjectDetails{}, errors.New("operation unsupported by Dockiva Engine")
-	}
-
 	project = strings.TrimSpace(project)
 	if project == "" {
 		return ComposeProjectDetails{}, errors.New("compose project name is required")
@@ -1063,7 +1076,12 @@ func (s *DockerService) GetComposeProjectDetails(project string) (ComposeProject
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	result, err := s.client.Load().ContainerList(
+	cli, done, err := s.composeClient()
+	if err != nil {
+		return ComposeProjectDetails{}, err
+	}
+	defer done()
+	result, err := cli.ContainerList(
 		ctx,
 		client.ContainerListOptions{
 			All: true,
@@ -1108,10 +1126,6 @@ func (s *DockerService) GetComposeProjectDetails(project string) (ComposeProject
 }
 
 func (s *DockerService) RunComposeCommand(project string, action string) (DockerCLIResult, error) {
-	if _, ok := s.currentRuntime().(*vmfreeRuntime); ok {
-		return DockerCLIResult{}, errors.New("operation unsupported by Dockiva Engine")
-	}
-
 	action = strings.ToLower(strings.TrimSpace(action))
 
 	switch action {
@@ -1168,7 +1182,7 @@ func (s *DockerService) RunComposeCommand(project string, action string) (Docker
 		buildArgs := append([]string{}, args...)
 		buildArgs = append(buildArgs, "--progress", "plain", "build")
 
-		buildResult, err := runDockerCLI(30*time.Minute, meta.WorkingDir, buildArgs...)
+		buildResult, err := s.composeCLI(30*time.Minute, meta.WorkingDir, buildArgs...)
 		if err != nil {
 			return DockerCLIResult{Output: buildResult}, err
 		}
@@ -1176,13 +1190,13 @@ func (s *DockerService) RunComposeCommand(project string, action string) (Docker
 		upArgs := append([]string{}, args...)
 		upArgs = append(upArgs, "up", "-d")
 
-		upResult, err := runDockerCLI(10*time.Minute, meta.WorkingDir, upArgs...)
+		upResult, err := s.composeCLI(10*time.Minute, meta.WorkingDir, upArgs...)
 		output := strings.TrimSpace(buildResult + "\n" + upResult)
 
 		return DockerCLIResult{Output: output}, err
 	}
 
-	output, err := runDockerCLI(30*time.Minute, meta.WorkingDir, args...)
+	output, err := s.composeCLI(30*time.Minute, meta.WorkingDir, args...)
 	return DockerCLIResult{Output: output}, err
 }
 
@@ -1259,11 +1273,7 @@ func (s *DockerService) CreateNetwork(name string, driver string) (DockerCLIResu
 }
 
 func (s *DockerService) GetDiskUsage() ([]DockerDiskUsageItem, error) {
-	if _, ok := s.currentRuntime().(*vmfreeRuntime); ok {
-		return nil, errors.New("resource accounting unavailable for Dockiva Engine")
-	}
-
-	output, err := runDockerCLI(
+	output, err := s.composeCLI(
 		2*time.Minute,
 		"",
 		"system", "df",
@@ -1314,10 +1324,6 @@ func (s *DockerService) GetDiskUsage() ([]DockerDiskUsageItem, error) {
 }
 
 func (s *DockerService) PruneDocker(scope string) (DockerCLIResult, error) {
-	if _, ok := s.currentRuntime().(*vmfreeRuntime); ok {
-		return DockerCLIResult{}, errors.New("operation unsupported by Dockiva Engine")
-	}
-
 	scope = strings.ToLower(strings.TrimSpace(scope))
 
 	var args []string
@@ -1346,7 +1352,7 @@ func (s *DockerService) PruneDocker(scope string) (DockerCLIResult, error) {
 		return DockerCLIResult{}, fmt.Errorf("unsupported prune scope: %s", scope)
 	}
 
-	output, err := runDockerCLI(10*time.Minute, "", args...)
+	output, err := s.composeCLI(10*time.Minute, "", args...)
 	return DockerCLIResult{Output: output}, err
 }
 
@@ -1355,6 +1361,32 @@ func runDockerCLI(timeout time.Duration, dir string, args ...string) (string, er
 }
 
 func runDockerCLIAtEndpoint(timeout time.Duration, dir string, endpoint string, args ...string) (string, error) {
+	return runDockerCLIEnv(timeout, dir, endpoint, nil, args...)
+}
+
+// composeClient is a Docker client for the active engine: Dockiva Engine's own
+// Docker socket, or the configured endpoint. done releases it.
+func (s *DockerService) composeClient() (cli *client.Client, done func(), err error) {
+	if r, ok := s.currentRuntime().(*vmfreeRuntime); ok {
+		cli, err := client.New(client.WithHost("unix://"+filepath.Join(r.home, "docker.sock")), client.WithVersion("1.45"), client.WithUserAgent("dockiva/0.9.0"))
+		if err != nil {
+			return nil, nil, err
+		}
+		return cli, func() { _ = cli.Close() }, nil
+	}
+	return s.client.Load(), func() {}, nil
+}
+
+// composeCLI runs the docker CLI (compose, system df, prune) against the active engine. Builds on Dockiva
+// Engine use the classic builder API, which works even when the docker CLI has no buildx plugin.
+func (s *DockerService) composeCLI(timeout time.Duration, dir string, args ...string) (string, error) {
+	if r, ok := s.currentRuntime().(*vmfreeRuntime); ok {
+		return runDockerCLIEnv(timeout, dir, "unix://"+filepath.Join(r.home, "docker.sock"), []string{"DOCKER_BUILDKIT=0"}, args...)
+	}
+	return runDockerCLI(timeout, dir, args...)
+}
+
+func runDockerCLIEnv(timeout time.Duration, dir string, endpoint string, env []string, args ...string) (string, error) {
 	dockerPath, err := dockerCLIPath()
 	if err != nil {
 		return "", errors.New("docker CLI was not found")
@@ -1375,10 +1407,10 @@ func runDockerCLIAtEndpoint(timeout time.Duration, dir string, endpoint string, 
 		}
 	}
 
-	cmd.Env = append(
+	cmd.Env = append(append(
 		os.Environ(),
 		"COMPOSE_MENU=false",
-	)
+	), env...)
 
 	outputBytes, runErr := cmd.CombinedOutput()
 	output := strings.TrimSpace(string(outputBytes))

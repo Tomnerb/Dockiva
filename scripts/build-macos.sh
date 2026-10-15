@@ -214,7 +214,26 @@ if [[ "$EXTERNAL_ONLY" == false ]]; then
   fi
 fi
 
+# The app is the native SwiftUI front end (macos/); the Go program Wails built runs
+# beside it as its core (dockiva --core), with the same Resources. The bundle keeps
+# its identifier, so v0.4 installs update into it.
+if [[ "$(uname -s)" == "Darwin" ]]; then
+  SWIFT_ARCH="arm64"
+  [[ "$ARCH" == "amd64" ]] && SWIFT_ARCH="x86_64"
+  swift build -c release --arch "$SWIFT_ARCH" --package-path macos
+  SWIFT_BIN="$(swift build -c release --arch "$SWIFT_ARCH" --package-path macos --show-bin-path)"
+  mv "$SOURCE_APP/Contents/MacOS/dockiva" "$SOURCE_APP/Contents/MacOS/dockiva-core"
+  cp -f "$SWIFT_BIN/Dockiva" "$SOURCE_APP/Contents/MacOS/Dockiva"
+  /usr/libexec/PlistBuddy -c "Set :CFBundleExecutable Dockiva" "$SOURCE_APP/Contents/Info.plist"
+  /usr/libexec/PlistBuddy -c "Set :LSMinimumSystemVersion 14.0" "$SOURCE_APP/Contents/Info.plist"
+else
+  echo "Not on macOS: packaging the Wails front end (the SwiftUI app needs Xcode)." >&2
+fi
+
 if [[ "$RELEASE" == true ]]; then
+  if [[ -f "$SOURCE_APP/Contents/MacOS/dockiva-core" ]]; then
+    codesign --force --options runtime --timestamp --sign "$SIGN_IDENTITY" "$SOURCE_APP/Contents/MacOS/dockiva-core"
+  fi
   if [[ "$EXTERNAL_ONLY" == false ]]; then
     codesign \
       --force \
@@ -255,14 +274,19 @@ if [[ "$RELEASE" == true ]]; then
     --wait
   xcrun stapler staple "$SOURCE_APP"
   xcrun stapler validate "$SOURCE_APP"
-elif [[ "$EXTERNAL_ONLY" == false ]]; then
-  codesign \
-    --force \
-    --sign - \
-    --timestamp=none \
-    --entitlements native/macos/DockivaVMM/dockiva-vmm.entitlements \
-    "$RESOURCES/dockiva-vmm"
-  codesign --force --sign - --timestamp=none "$SOURCE_APP"
+elif [[ "$(uname -s)" == "Darwin" ]]; then
+  if [[ "$EXTERNAL_ONLY" == false ]]; then
+    codesign \
+      --force \
+      --sign - \
+      --timestamp=none \
+      --entitlements native/macos/DockivaVMM/dockiva-vmm.entitlements \
+      "$RESOURCES/dockiva-vmm"
+  fi
+  if [[ -f "$SOURCE_APP/Contents/MacOS/dockiva-core" ]]; then
+    codesign --force --sign - --timestamp=none "$SOURCE_APP/Contents/MacOS/dockiva-core"
+  fi
+  codesign --force --sign - --timestamp=none "$SOURCE_APP" # the SwiftUI executable replaced Wails'
 fi
 
 DIST_DIR="dist/macos-$ARCH"

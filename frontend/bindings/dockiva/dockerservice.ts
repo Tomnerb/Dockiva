@@ -248,6 +248,17 @@ export function SelectEngineBackend(backend: string, platformOption: string, ext
     return $Call.ByID(2734271629, backend, platformOption, externalEndpoint);
 }
 
+/**
+ * SendTerminalBytes writes raw bytes to a terminal session. Over JSON the
+ * argument is a base64 string, so any byte sequence (mouse reports, C1) survives.
+ */
+export function SendTerminalBytes(sessionID: string, input: string | null): $CancellablePromise<void> {
+    return $Call.ByID(1847939410, sessionID, input);
+}
+
+/**
+ * SendTerminalInput writes UTF-8 text to a terminal session.
+ */
 export function SendTerminalInput(sessionID: string, input: string): $CancellablePromise<void> {
     return $Call.ByID(541440005, sessionID, input);
 }

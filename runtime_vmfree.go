@@ -133,6 +133,7 @@ func (r *vmfreeRuntime) ListContainers(ctx context.Context) ([]ContainerInfo, er
 	var rows []struct {
 		Id, Image, State, Status string
 		Names                    []string
+		Labels                   map[string]string
 		Ports                    []struct {
 			PrivatePort, PublicPort uint16
 			Type                    string
@@ -148,7 +149,8 @@ func (r *vmfreeRuntime) ListContainers(ctx context.Context) ([]ContainerInfo, er
 			ports = append(ports, PortInfo{PrivatePort: p.PrivatePort, PublicPort: p.PublicPort, Type: p.Type,
 				Display: fmt.Sprintf("%d:%d/%s", p.PublicPort, p.PrivatePort, p.Type), URL: localhostURL(p.PublicPort, p.PrivatePort, p.Type)})
 		}
-		result = append(result, ContainerInfo{ID: row.Id, ShortID: shortenID(row.Id), Name: strings.TrimPrefix(firstContainerName(row.Names), "/"), Image: row.Image, State: row.State, Status: row.Status, Ports: ports})
+		result = append(result, ContainerInfo{ID: row.Id, ShortID: shortenID(row.Id), Name: strings.TrimPrefix(firstContainerName(row.Names), "/"), Image: row.Image, State: row.State, Status: row.Status, Ports: ports,
+			ComposeProject: row.Labels[composeProjectLabel], ComposeService: row.Labels[composeServiceLabel]})
 	}
 	return result, nil
 }

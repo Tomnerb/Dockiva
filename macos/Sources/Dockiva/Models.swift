@@ -112,7 +112,8 @@ struct DockerCLIResult: Codable, Hashable {
 struct StreamOutputEvent: Codable, Hashable {
     var streamId: String
     var containerId: String
-    var data: String?
+    /// Raw output bytes; the core sends them as base64, which JSONDecoder decodes by default.
+    var dataBase64: Data?
     var error: String?
     var closed: Bool?
     var seq: UInt64

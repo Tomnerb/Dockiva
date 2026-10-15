@@ -207,77 +207,6 @@ struct CreateBar: View {
     }
 }
 
-struct EngineView: View {
-    @Environment(AppModel.self) private var model
-    private let accent = SidebarItem.engine.accent
-
-    private var running: Bool { model.engine?.running == true }
-
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                FeatureHeader(title: "Engine", subtitle: model.engine?.message ?? "The Linux container engine behind Dockiva",
-                              symbol: SidebarItem.engine.symbol, accent: accent) {
-                    HStack(spacing: 8) {
-                        if model.engineBusy { ProgressView().controlSize(.small) }
-                        if running {
-                            Button { Task { await model.engineAction(start: false) } } label: { Label("Stop engine", systemImage: "stop.fill") }
-                                .buttonStyle(SecondaryButtonStyle())
-                        } else {
-                            Button { Task { await model.engineAction(start: true) } } label: { Label("Start engine", systemImage: "power") }
-                                .buttonStyle(PrimaryButtonStyle(color: accent))
-                        }
-                    }
-                    .disabled(model.engineBusy || model.engine?.supported == false)
-                }
-                HStack(spacing: 14) {
-                    MetricCard(title: "State", value: running ? "Running" : "Stopped", symbol: running ? "checkmark.circle.fill" : "pause.circle",
-                               subtitle: model.status?.connected == true ? "Docker API reachable" : "Docker API not reachable")
-                    MetricCard(title: "Backend", value: (model.engine?.backend ?? model.settings?.engineBackend ?? "—").capitalized,
-                               symbol: "bolt.horizontal.circle", subtitle: model.engine?.platform ?? "")
-                    MetricCard(title: "API", value: model.status?.apiVersion.isEmpty == false ? model.status!.apiVersion : "—",
-                               symbol: "chevron.left.forwardslash.chevron.right", subtitle: "Docker Engine API version")
-                }
-                if let endpoint = model.engine?.endpoint { terminalCard(endpoint) }
-                settingsCard
-            }
-            .padding(28)
-        }
-        .task { await model.refreshEngine() }
-    }
-
-    private func terminalCard(_ endpoint: String) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            SectionTitle(title: "Use it from a terminal", detail: "The docker CLI and Compose talk to this engine", symbol: "terminal")
-            HStack {
-                Text("export DOCKER_HOST=\(endpoint)")
-                    .font(.system(.callout, design: .monospaced))
-                    .textSelection(.enabled)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                Spacer()
-                Button { copy("export DOCKER_HOST=\(endpoint)") } label: { Label("Copy", systemImage: "doc.on.doc") }
-                    .buttonStyle(SecondaryButtonStyle())
-            }
-            .padding(12)
-            .background(.black.opacity(0.3), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(20)
-        .surface(cornerRadius: 20)
-    }
-
-    private var settingsCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            SectionTitle(title: "Startup", detail: "How Dockiva treats the engine when it opens", symbol: "gearshape")
-            SettingsToggles()
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(20)
-        .surface(cornerRadius: 20)
-    }
-}
-
 struct SettingsToggles: View {
     @Environment(AppModel.self) private var model
 
@@ -304,7 +233,10 @@ struct SettingsToggles: View {
 
 struct SettingsView: View {
     var body: some View {
-        Form { SettingsToggles() }
+        Form {
+            SettingsToggles()
+            StartupSettingsSection()
+        }
             .formStyle(.grouped)
             .padding()
     }
