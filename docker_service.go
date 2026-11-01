@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/binary"
@@ -134,10 +135,13 @@ type NetworkInfo struct {
 	Ingress    bool   `json:"ingress"`
 }
 
+// StreamOutputEvent carries terminal and log output. Data is the raw bytes;
+// encoding/json sends []byte as base64 ("dataBase64"), so a UTF-8 character
+// split across reads, or a non-UTF-8 byte, reaches clients intact.
 type StreamOutputEvent struct {
 	StreamID    string `json:"streamId"`
 	ContainerID string `json:"containerId"`
-	Data        string `json:"data,omitempty"`
+	Data        []byte `json:"dataBase64,omitempty"`
 	Error       string `json:"error,omitempty"`
 	Closed      bool   `json:"closed,omitempty"`
 	Seq         uint64 `json:"seq"`
@@ -534,10 +538,6 @@ func (s *DockerService) RemoveContainer(containerID string, force bool) error {
 }
 
 func (s *DockerService) ComposeProjectAction(project string, action string) error {
-	if _, ok := s.currentRuntime().(*vmfreeRuntime); ok {
-		return errors.New("operation unsupported by Dockiva Engine")
-	}
-
 	project = strings.TrimSpace(project)
 	action = strings.ToLower(strings.TrimSpace(action))
 
@@ -554,7 +554,12 @@ func (s *DockerService) ComposeProjectAction(project string, action string) erro
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	result, err := s.client.Load().ContainerList(
+	cli, done, err := s.composeClient()
+	if err != nil {
+		return err
+	}
+	defer done()
+	result, err := cli.ContainerList(
 		ctx,
 		client.ContainerListOptions{
 			All: true,
@@ -616,14 +621,14 @@ func (s *DockerService) ComposeProjectAction(project string, action string) erro
 
 			switch action {
 			case "start":
-				_, actionErr = s.client.Load().ContainerStart(
+				_, actionErr = cli.ContainerStart(
 					ctx,
 					target.id,
 					client.ContainerStartOptions{},
 				)
 
 			case "stop":
-				_, actionErr = s.client.Load().ContainerStop(
+				_, actionErr = cli.ContainerStop(
 					ctx,
 					target.id,
 					client.ContainerStopOptions{
@@ -632,7 +637,7 @@ func (s *DockerService) ComposeProjectAction(project string, action string) erro
 				)
 
 			case "restart":
-				_, actionErr = s.client.Load().ContainerRestart(
+				_, actionErr = cli.ContainerRestart(
 					ctx,
 					target.id,
 					client.ContainerRestartOptions{
@@ -850,7 +855,14 @@ func (s *DockerService) StartTerminal(containerID string) (string, error) {
 	return sessionID, nil
 }
 
+// SendTerminalInput writes UTF-8 text to a terminal session.
 func (s *DockerService) SendTerminalInput(sessionID string, input string) error {
+	return s.SendTerminalBytes(sessionID, []byte(input))
+}
+
+// SendTerminalBytes writes raw bytes to a terminal session. Over JSON the
+// argument is a base64 string, so any byte sequence (mouse reports, C1) survives.
+func (s *DockerService) SendTerminalBytes(sessionID string, input []byte) error {
 	s.sessionMu.Lock()
 	session := s.terminalSessions[sessionID]
 	s.sessionMu.Unlock()
@@ -862,10 +874,10 @@ func (s *DockerService) SendTerminalInput(sessionID string, input string) error 
 	if binding, ok := getRuntimeTerminalBinding(sessionID); ok {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		return binding.provider.RuntimeTerminalInput(ctx, binding.runtimeID, input)
+		return binding.provider.RuntimeTerminalInput(ctx, binding.runtimeID, string(input))
 	}
 
-	_, err := session.response.Conn.Write([]byte(input))
+	_, err := session.response.Conn.Write(input)
 	return err
 }
 
@@ -951,7 +963,7 @@ func (s *DockerService) readTerminal(session *terminalSession) {
 				StreamOutputEvent{
 					StreamID:    session.id,
 					ContainerID: session.containerID,
-					Data:        string(buffer[:n]),
+					Data:        bytes.Clone(buffer[:n]),
 					Seq:         session.seq.Add(1),
 				},
 			)
@@ -1096,7 +1108,7 @@ func (s *DockerService) readLogStream(
 			StreamOutputEvent{
 				StreamID:    session.id,
 				ContainerID: session.containerID,
-				Data:        string(data),
+				Data:        data,
 				Seq:         session.seq.Add(1),
 			},
 		)

@@ -193,6 +193,10 @@ func (s *DockerService) StopManagedEngine(
 	platformOption string,
 ) (EngineActionResult, error) {
 	backend = normalizeEngineBackend(backend)
+	if backend == "vmfree" {
+		err := stopDockivaEngine(newVMFreeRuntime())
+		return EngineActionResult{Status: s.GetEngineStatus("vmfree", "")}, err
+	}
 
 	if backend == "auto" {
 		backend = s.engine.Name()
@@ -218,6 +222,10 @@ func (s *DockerService) DeleteManagedEngine(
 	platformOption string,
 ) (EngineActionResult, error) {
 	backend = normalizeEngineBackend(backend)
+	if backend == "vmfree" {
+		err := deleteDockivaEngine(newVMFreeRuntime())
+		return EngineActionResult{Status: s.GetEngineStatus("vmfree", "")}, err
+	}
 
 	if backend == "auto" {
 		backend = s.engine.Name()

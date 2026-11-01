@@ -19,7 +19,7 @@ interface Container {
 interface StreamOutputEvent {
   streamId: string
   containerId: string
-  data?: string
+  dataBase64?: string
   error?: string
   closed?: boolean
   seq: number
@@ -44,6 +44,7 @@ let sessionID = ''
 let unsubscribeEvent: (() => void) | undefined
 let resizeObserver: ResizeObserver | undefined
 let inputDisposable: { dispose(): void } | undefined
+let binaryDisposable: { dispose(): void } | undefined
 let resizeDisposable: { dispose(): void } | undefined
 let resizeTimer: ReturnType<typeof setTimeout> | undefined
 
@@ -101,8 +102,9 @@ async function start() {
         return
       }
 
-      if (data.data) {
-        terminal?.write(data.data)
+      if (data.dataBase64) {
+        // Raw bytes: xterm.js decodes UTF-8 itself, across chunk boundaries.
+        terminal?.write(Uint8Array.from(atob(data.dataBase64), (c) => c.charCodeAt(0)))
       }
 
       if (data.error) {
@@ -133,6 +135,19 @@ async function start() {
         'main.DockerService.SendTerminalInput',
         sessionID,
         data,
+      )
+    })
+
+    // Non-UTF-8 input (X10 mouse reports) arrives as a binary string, one char per byte.
+    binaryDisposable = terminal.onBinary((data) => {
+      if (!sessionID || status.value !== 'connected') {
+        return
+      }
+
+      void Call.ByName(
+        'main.DockerService.SendTerminalBytes',
+        sessionID,
+        btoa(data),
       )
     })
 
@@ -239,6 +254,7 @@ onBeforeUnmount(() => {
   resizeObserver?.disconnect()
   unsubscribeEvent?.()
   inputDisposable?.dispose()
+  binaryDisposable?.dispose()
   resizeDisposable?.dispose()
   terminal?.dispose()
 

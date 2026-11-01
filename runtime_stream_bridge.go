@@ -136,7 +136,7 @@ func (s *DockerService) readRuntimeTerminal(
 					StreamOutputEvent{
 						StreamID:    session.id,
 						ContainerID: session.containerID,
-						Data:        chunk.Data,
+						Data:        []byte(chunk.Data),
 						Seq:         session.seq.Add(1),
 					},
 				)
@@ -261,7 +261,7 @@ func (s *DockerService) readRuntimeLogStream(
 					StreamOutputEvent{
 						StreamID:    session.id,
 						ContainerID: session.containerID,
-						Data:        chunk.Data,
+						Data:        []byte(chunk.Data),
 						Seq:         session.seq.Add(1),
 					},
 				)

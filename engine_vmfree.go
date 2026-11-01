@@ -148,3 +148,47 @@ func homeInUse(home string) bool {
 	}
 	return false
 }
+
+// stopDockivaEngine stops the engine and its containers (POST /dockiva/shutdown);
+// containers with restart policies start again with the engine.
+func stopDockivaEngine(r *vmfreeRuntime) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	if !r.Info(ctx).Connected {
+		return nil
+	}
+	if _, err := r.request(ctx, "POST", "/dockiva/shutdown", nil); err != nil {
+		return fmt.Errorf("stop Dockiva Engine: %w", err)
+	}
+	for ctx.Err() == nil {
+		probe, done := context.WithTimeout(ctx, time.Second)
+		up := r.Info(probe).Connected
+		done()
+		if !up {
+			return nil
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	return errors.New("Dockiva Engine did not stop within 2 minutes")
+}
+
+// deleteDockivaEngine stops the engine and removes its state: every container,
+// image and volume in it, and the ~/.vmfree link to it.
+func deleteDockivaEngine(r *vmfreeRuntime) error {
+	if err := stopDockivaEngine(r); err != nil {
+		return err
+	}
+	if homeInUse(r.home) {
+		return errors.New("Dockiva Engine's containers are still running; stop them and try again")
+	}
+	if err := os.RemoveAll(r.home); err != nil {
+		return fmt.Errorf("delete %s: %w", r.home, err)
+	}
+	if userHome, err := os.UserHomeDir(); err == nil {
+		legacy := filepath.Join(userHome, ".vmfree")
+		if target, err := os.Readlink(legacy); err == nil && target == r.home {
+			_ = os.Remove(legacy)
+		}
+	}
+	return nil
+}

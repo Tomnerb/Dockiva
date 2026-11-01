@@ -232,6 +232,8 @@ struct FilterPills<Selection: Hashable>: View {
                 } label: {
                     Text(choice.label)
                         .font(.system(size: 12, weight: .semibold, design: .rounded))
+                        .lineLimit(1)
+                        .fixedSize()
                         .foregroundStyle(selected ? Color.white : Color.secondary)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 6)
@@ -242,6 +244,7 @@ struct FilterPills<Selection: Hashable>: View {
         }
         .padding(4)
         .background(Color.primary.opacity(0.055), in: Capsule())
+        .fixedSize()
     }
 }
 

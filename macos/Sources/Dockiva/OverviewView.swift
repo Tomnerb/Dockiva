@@ -91,7 +91,7 @@ struct OverviewView: View {
 
     private var message: some View {
         VStack(spacing: 8) {
-            Text(connected ? "Your containers are running" : "Containers, without the VM")
+            Text(!connected ? "Containers, without the VM" : model.runningCount > 0 ? "Your containers are running" : "The engine is ready")
                 .font(.system(size: 32, weight: .semibold, design: .rounded))
             Text(connected
                  ? "\(model.runningCount) of \(model.containers.count) containers up, \(model.images.count) images, \(model.volumes.count) volumes."

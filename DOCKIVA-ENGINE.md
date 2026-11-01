@@ -30,18 +30,28 @@ This section supersedes older capability statements further down the page.
   `--network host` shares the Mac's network (servers stay on its loopback);
   `none` keeps a container to its own loopback. One network per container.
   Outbound IPv4 TCP and UDP reach the internet, and DNS uses the Mac's IPv4
-  nameservers.
+  nameservers. Inside a container IPv6 works on loopback and dual-stack
+  (`::`, `::1`, v4-mapped addresses). Published ports (`-p`, ranges, `-P`,
+  `/udp`) listen on 127.0.0.1 unless a host address is given
+  (`-p 0.0.0.0:8080:80`, `-p [::]:8080:80`); `dockiva-engine
+  --default-bind-ip 0.0.0.0` makes all interfaces the default, as in Docker.
   Unix-domain sockets (stream and datagram, `socketpair`) live as socket files
   in the container's root, and descriptors pass between processes (`SCM_RIGHTS`);
-  Linux abstract names are not supported yet. No IPv6 or raw sockets.
+  abstract names are shared by a container and its `exec`s. `ping` works
+  (ICMP datagram sockets, and raw ICMP for root); other raw and packet sockets
+  return `EPERM`, as for a container without `CAP_NET_RAW`.
 - **Docker CLI.** The engine registers a `dockiva` Docker context (it never
   switches the current one), served by `~/.dockiva-engine/docker.sock`; access is limited
   to your user by file permissions, as with Docker's own socket. After
   `docker context use dockiva`, `docker run` (foreground or `-d`, `-i`, `-t`,
   `--rm`, `-p`, `-e`, `-u`, `-m`, `--cpus`, `-v`, `--mount`, `--read-only`,
   `--network`, `--restart`, `--health-*`), `exec` (`-it`, `-u`, `-w`, `-e`, `-d`),
-  `attach`, `logs -f`, `kill`, `wait`, `events`, `ps`, `inspect`, `cp`, `stats`,
-  `pull`, `tag`, `rmi`, `rm`, `docker volume`, `docker network` and
+  `attach`, `logs` (`-f`, `-t`, `--since`, `--until`, `--tail`; stdout and
+  stderr in the order written), `kill`, `wait`, `events` (Docker's container and
+  image events, with filters), `ps`, `inspect`, `cp`, `stats`, `top`, `pause`,
+  `unpause`, `update` (`-m`, `--cpus`, `--restart`), `rename`, `pull`, `push`
+  (`--all-tags`, registry sign-in), `tag`, `rmi`, `rm`, `docker volume`,
+  `docker network` and
   `docker compose` (`up`, `down`, `ps`, `logs`, `exec`, `stop`, `start`,
   `restart`, with healthchecks and `depends_on` conditions) work with the plain
   docker CLI. `-t` gives a pseudo-terminal (line editing, ^C to the foreground
@@ -50,6 +60,24 @@ This section supersedes older capability statements further down the page.
   (`psql`, `redis-cli`, shells) but cannot see or signal the container's own
   processes. Restart policies and healthchecks are run by each container's
   supervisor; `always` and `unless-stopped` containers start again with the engine.
+- **Builds.** `docker build` runs Dockerfiles through Docker's classic builder
+  API: `FROM` (multi-stage, `AS`, `scratch`, `--platform=linux/arm64`), `RUN`
+  (shell and exec form, in a container with the stage's network access), `COPY`
+  and `ADD` (globs, `--from` a stage or image, `--chmod`, ADD of URLs and of
+  tar/gzip/bzip2 archives), `ENV`, `ARG` and `--build-arg`, `WORKDIR`, `USER`,
+  `LABEL`, `EXPOSE`, `CMD`, `ENTRYPOINT`, `VOLUME`, `HEALTHCHECK`, `SHELL`,
+  `STOPSIGNAL`, `--target`, `-t`, `-q`, `.dockerignore`, `docker build - <
+  Dockerfile`, and `docker compose build` / `up --build`. An image is its base
+  image's layers plus one layer of the build's changes; an untagged build is
+  found by its ID (`docker run <id>`). Unchanged steps come from a step cache
+  (`--no-cache` skips it, `docker builder prune` clears it). Plain `docker build`
+  on Docker CLI 23 and later works through buildx's built-in `docker` driver (the
+  engine answers its BuildKit API with the same builder); `DOCKER_BUILDKIT=0`
+  also works. `RUN --mount` (`type=cache`, `bind`, `tmpfs`, and `secret` from
+  `docker build --secret`), `RUN --network`, heredocs (`RUN <<EOF`,
+  `COPY <<EOF`), `# syntax=docker/dockerfile:1` and `docker build --push` work.
+  Not yet: `--mount=type=ssh`, `--build-context`, `--output` other than the image
+  store, Git or URL build contexts, xz archives in `ADD`.
 - **Mounts and volumes.** `-v /host/path:/path[:ro]` binds a host directory or a
   single file; `-v name:/path` and `-v /path` use named and anonymous volumes
   stored in `~/.dockiva-engine/volumes`. A new volume first receives the image's content
@@ -76,21 +104,26 @@ This section supersedes older capability statements further down the page.
   thread-directed signals; `docker stop` sends the image's `StopSignal` to PID 1
   and kills after 10 s. Shared memory (`MAP_SHARED` anonymous and System V),
   cross-process futexes, `signalfd`, `eventfd`, `timerfd`, `rt_sigtimedwait`
-  (tini), named pipes (`mkfifo`), `setsid`, `/proc/self/exe`, `/dev/fd/N`, and
-  `/proc` files for each process (`stat`, `statm`, `status`) and the container
-  (`cpuinfo`, `meminfo`, `mounts`).
+  (tini), named pipes (`mkfifo`), `setsid` and sessions, `/proc/self/exe`,
+  `/dev/fd/N`, setuid/setgid/sticky mode bits (a set-ID program runs with the
+  owner's effective ID), `mremap`, `MAP_FIXED` anywhere in the address space,
+  `openat2`, `execveat`, `close_range`, and `/proc` files for each process
+  (`stat`, `statm`, `status`, `task/`, with real CPU time and resident memory)
+  and the container (`stat`, `meminfo`, `vmstat`, `loadavg`, `uptime`,
+  `cpuinfo`, `mounts`), so `top`, `htop`, `ps`, `free`, `uptime`, `vmstat` and
+  `pgrep` work. .NET SDK builds (MSBuild with worker nodes) run in `docker run`.
   Descriptors take the lowest free number; unknown system calls return `ENOSYS`.
-- **Limits:** 64 live processes per container and 128 threads per process; up to
+- **Limits:** 1024 live processes per container and 128 threads per process; up to
   1024 sockets, 1024 files and 509 pipe/epoll descriptors per process (guests see
-  `RLIMIT_NOFILE` 4096), 64 pipes and 128 `signalfd`s per container, 4096 host
+  `RLIMIT_NOFILE` 4096), 1024 pipes and 128 `signalfd`s per container, 4096 host
   descriptors per container; 8 MiB stacks; a memory limit per container (`-m`,
   6 MiB to 64 GiB; 2 GiB by default), charged as pages are first written and
   reported by `free` and `/proc/meminfo` (a 12 GiB mmap arena per process, with
   larger `PROT_NONE` reservations such as MariaDB's buffer pool placed above it;
   `munmap` and `MADV_DONTNEED` return memory; a process over the limit is killed
   with a fault rather than an OOM kill); 64 running containers
-  (`dockiva-engine --max-containers`). Files are capped at 4 GiB each; the
-  Mac's disk is the only storage limit. Executables up to 512 MiB.
+  (`dockiva-engine --max-containers`). Files are capped at 1 TiB each; the
+  Mac's disk is the only storage limit. `fsync` is an ordered-write barrier by default (crash-consistent, OrbStack-like); `dockiva-engine --fsync full` makes it strictly durable, `--fsync fast` fastest. Executables up to 512 MiB.
 - **Performance.** A container gets one vCPU per Mac CPU (`--cpus`, set by the
   engine). Processes and the threads of one process run in parallel: every
   thread is scheduled on its own, sharing its process's page tables, and the
