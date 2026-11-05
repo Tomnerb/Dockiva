@@ -289,3 +289,19 @@ Use `bin/Launch Dockiva Profiles Test.command` for the latest isolated build,
 `bin/dockiva-profiles-test.app`, with `~/.vmfree-dockiva-profiles-test` state.
 Select Dockiva Engine if an existing preference chooses another engine.
 [Implementation and evidence](https://github.com/Tomnerb/dockiva-engine/blob/main/docs/DOCKIVA-INTEGRATION.md#compatibility-profiles).
+
+## Developer test builds
+
+The separate local `bin/dockiva-redis-test.app` build adds a prepared Redis 7.4.2 preset (originally on the now-removed Unicorn adapter). Use `bin/Launch Dockiva Redis Test.command` for isolated engine state, select Dockiva Engine, and create the Redis preview preset. It listens on `127.0.0.1:16379`; private data survives Stop/Start and Restart. The packaged adapter test passes; native GUI clicks, stock Redis images, PostgreSQL/Valkey and production use remain unqualified.
+
+The Go control-plane test build is `bin/dockiva-go-test.app`. Use
+`bin/Launch Dockiva Go Test.command` for isolated engine state. The helper migrates
+the supported preview API, OCI preparation, lifecycle, logs and recovery to Go/C.
+Existing running engines are reused; this launcher prevents an older Python daemon
+from masking the new build. See [migration evidence](https://github.com/Tomnerb/dockiva-engine/blob/main/docs/DOCKIVA-INTEGRATION.md#dockivad-go-migration).
+
+The newer `bin/dockiva-profiles-test.app` adds digest-bound profiles and native
+capability negotiation. Use `bin/Launch Dockiva Profiles Test.command` for
+separate state. Inspect includes the selected backend, policy and experimental
+evidence scope; [profile verification](https://github.com/Tomnerb/dockiva-engine/blob/main/docs/DOCKIVA-INTEGRATION.md#compatibility-profiles)
+includes backend replacement, aliases, restart persistence and service tests.
