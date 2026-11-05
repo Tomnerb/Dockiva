@@ -2,63 +2,115 @@
   <img src="assets/dockiva_logo.png" alt="Dockiva" width="420">
 </p>
 
-# Dockiva
+<p align="center">
+  <b>The open-source OrbStack alternative.</b><br>
+  Run Docker containers on your Mac without a Linux VM.
+</p>
 
-Dockiva is a lightweight, cross-platform desktop environment for managing local containers. It combines a Go and Wails core with a Vue interface and supports both platform-native runtimes and existing Docker endpoints.
+<p align="center">
+  <a href="https://github.com/Tomnerb/Dockiva/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/Tomnerb/Dockiva"></a>
+  <a href="LICENSE"><img alt="License: Apache 2.0" src="https://img.shields.io/github/license/Tomnerb/Dockiva"></a>
+  <img alt="Platforms" src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-blue">
+</p>
 
-The [frozen macOS architecture v1.0](docs/FINAL-ARCHITECTURE-V1.md) defines the production destination: SwiftUI/AppKit UI, Go `dockivad`, and a supervised C Linux Personality/runtime, with no Python in production execution. The current Vue/Wails desktop is transitional; the bundled control plane now uses Go dockivad with C execution workers and no Python runtime. Valkey persistence (V0–V11) and PostgreSQL recovery/stress (P0–P12) remain open acceptance gates; prepared Redis evidence does not qualify them.
+<!-- TODO: add a screenshot or short GIF of the main window here, e.g.
+<p align="center"><img src="assets/screenshot.png" alt="Dockiva main window" width="820"></p> -->
 
-Dockiva is open source under the [Apache License 2.0](LICENSE). Contributions
-are welcome; read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull
-request. Report suspected vulnerabilities privately according to
-[SECURITY.md](SECURITY.md).
+## Why Dockiva
 
-Every pull request runs the frontend build and Go test suite. Dependabot checks
-Go, npm, and GitHub Actions dependencies weekly.
+- **No Linux VM on Apple Silicon.** Dockiva Engine runs container code directly
+  on the CPU through Hypervisor.framework. There is no guest kernel to boot and
+  no VM holding gigabytes of RAM.
+- **Fast where you feel it.** `docker run` starts in about 80 ms, and builds keep
+  pace with OrbStack. See [benchmarks](#benchmarks).
+- **Works with the tools you have.** The plain `docker` CLI, `docker compose`,
+  and `docker build`, including BuildKit features such as `RUN --mount` and
+  heredocs.
+- **Open source.** Apache 2.0. No license fee, no account, no telemetry.
+- **A focused desktop app.** Containers, Compose projects, logs, terminal,
+  stats, images, volumes, and networks, plus a menu-bar controller.
+- **Your data stays where it is.** Dockiva never takes over Docker Desktop or
+  another engine. Each engine keeps its own store and Docker context.
 
-> [!IMPORTANT]
-> Dockiva is under active development. Native macOS and Windows engines still require target-platform validation before production use.
+## Install
 
-## Highlights
+**macOS (Apple Silicon):** download the signed and notarized
+[`Dockiva-<version>-macOS-arm64.dmg`](https://github.com/Tomnerb/Dockiva/releases/latest),
+drag Dockiva to Applications, and open it. The engine starts on its own.
 
-- Clean, native-feeling desktop control center
-- Persistent light and dark appearance modes
+You also need the Docker CLI. If you don't have it:
+
+```bash
+brew install docker
+```
+
+For `docker compose`, also run `brew install docker-compose` and follow the
+setup note it prints.
+
+**Intel Macs, Linux, and Windows:** download the matching archive or installer
+from the [latest release](https://github.com/Tomnerb/Dockiva/releases/latest).
+See [platform status](#platform-status) for what each one supports.
+
+## Quickstart
+
+```bash
+docker context use dockiva
+docker run --rm -p 8080:80 nginx
+```
+
+Open http://localhost:8080. Your existing Docker setup is untouched; switch
+back any time with `docker context use default`.
+
+## Benchmarks
+
+Dockiva Engine compared with OrbStack on the same Apple Silicon Mac (medians of
+three alternating rounds, development build, November 2026):
+
+| Workload | Dockiva | OrbStack |
+| --- | --- | --- |
+| `docker run` container start | **82 ms** | 246 ms |
+| `go build` | 3.47 s | 3.49 s |
+| `npm install` (bind-mounted project) | **0.46 s** | 0.58 s |
+| Postgres `pgbench` TPC-B, 10 clients | **3,824 tps** | 1,065 tps |
+| Process spawn (Node `spawnSync`) | 1.2 ms | **0.34 ms** |
+
+OrbStack is still faster at spawning processes; that work is in progress. The
+`pgbench` write numbers are not a like-for-like durability comparison; see
+[DOCKIVA-ENGINE.md](DOCKIVA-ENGINE.md) for details and methodology.
+
+## Project status
+
+Dockiva is young and moving fast. The macOS Apple Silicon engine is the main
+focus; Windows support is experimental. It runs `linux/arm64` images today, and
+`linux/amd64` support is in progress. Kubernetes is not supported. Please
+[open an issue](https://github.com/Tomnerb/Dockiva/issues) when something
+breaks.
+
+## Dockiva compared with OrbStack and Docker Desktop
+
+| Capability | Dockiva | OrbStack | Docker Desktop |
+| --- | --- | --- | --- |
+| License | Open source (Apache 2.0) | Proprietary; paid for commercial use | Proprietary; paid for larger companies |
+| How containers run on Apple Silicon | Directly on the CPU, no Linux VM | Lightweight Linux VM | Linux VM |
+| Host platforms | macOS, Linux, Windows (experimental) | macOS | macOS, Linux, Windows |
+| Docker CLI, Compose, and builds | Yes | Yes | Yes |
+| Kubernetes | No | Yes | Yes |
+| Linux machines | No | Yes | No |
+| Runs alongside other engines | Yes, separate store and Docker context | Yes, with migration | Uses its own context |
+
+Choose Dockiva for a free, open-source, VM-free Docker engine on Apple Silicon.
+Choose OrbStack or Docker Desktop if you need Kubernetes, Linux machines, or a
+long-established product today.
+
+## Features
+
 - Container start, stop, restart, delete, logs, terminal, and inspect tools
 - Docker Compose import, grouping, project actions, builds, and rebuilds
 - Live CPU, memory, PID, port, and networking information
 - Image, volume, network, disk-usage, and prune tools
-- Dynamic tray and menu-bar controls with event-driven refresh
-- Explicit runtime selection with stable endpoint identity
-- Optional external Docker support without silently switching engines
-
-## Dockiva compared with OrbStack and Docker Desktop
-
-Dockiva is not trying to copy every feature in either product. Its current
-advantage is a focused, inspectable container control plane that can use a
-Dockiva-managed runtime or an existing Docker/Moby endpoint without silently
-changing which engine owns your data.
-
-| Capability | Dockiva | OrbStack | Docker Desktop |
-| --- | --- | --- | --- |
-| Host platforms | macOS, Linux, and Windows; native-backend maturity varies | Focused on macOS | macOS, Linux, and Windows |
-| Runtime choice | Explicit Dockiva Native or saved external endpoint | Integrated Docker-compatible engine and Linux machines | Bundled Docker Engine with platform VM/WSL integration |
-| Container UI | Lifecycle, Compose projects, logs, terminal, inspect, stats, images, volumes, and networks | Containers, Compose, Kubernetes, Linux machines, and host file access | Containers, images, volumes, builds, logs, Kubernetes, Docker Hub, and Extensions |
-| Storage workflow | Reviews container storage folders and offers scoped build-cache, unused-resource, and deep-clean choices | Dynamic disk plus container/image/volume file access and Docker Desktop migration | Image/volume cleanup, disk-image controls, and Resource Saver |
-| Engine identity | Keeps native and external stores separate and shows the active endpoint | Supports Docker contexts and side-by-side migration | Uses Docker Desktop's managed engine/context |
-| Kubernetes | Not implemented | Included | Included |
-| Product maturity | Active development; native engines still being validated | Established macOS product | Established cross-platform product and ecosystem |
-
-Choose Dockiva when explicit engine ownership, a compact container-focused UI,
-and a cross-platform native-runtime direction matter more than an all-in-one
-Kubernetes, registry, AI, extensions, or general Linux-machine suite. Choose
-OrbStack when you want its highly optimized macOS container and Linux-machine
-experience today. Choose Docker Desktop when you need Docker's complete,
-supported ecosystem and organization features.
-
-Comparison references: [OrbStack overview](https://docs.orbstack.dev/),
-[OrbStack migration and contexts](https://docs.orbstack.dev/install),
-[Docker Desktop overview](https://docs.docker.com/desktop/), and
-[Docker Desktop dashboard](https://docs.docker.com/desktop/use-desktop/).
+- Menu-bar and tray controls with event-driven refresh
+- Light and dark appearance
+- Explicit runtime selection: Dockiva Engine or an existing Docker endpoint
 
 ## Runtime architecture
 
@@ -71,11 +123,11 @@ Comparison references: [OrbStack overview](https://docs.orbstack.dev/),
               │                   │                   │
             Linux               macOS               Windows
               │                   │                   │
-        containerd/runc     Virtualization.framework  WSL2
-                                  │                   │
-                           Linux guest          Dockiva guest
-                                  │                   │
-                      dockerd/containerd/runc   dockerd/containerd/runc
+        containerd/runc      Dockiva Engine           WSL2
+                       (Hypervisor.framework,         │
+                         no Linux VM; or a      Dockiva guest
+                      Virtualization.framework        │
+                          VM as an option)    dockerd/containerd/runc
 ```
 
 External Docker and Moby endpoints remain available on supported platforms.
@@ -87,7 +139,8 @@ separate engine and never overwrites the selected External Docker endpoint.
 | Platform | Backend | Status |
 | --- | --- | --- |
 | Linux | Direct containerd in the `dockiva` namespace | Implemented; CNI networking requires one-time helper installation |
-| macOS | Apple `Virtualization.framework` VM | Implemented; requires Linux-generated kernel and root filesystem assets |
+| macOS (Apple Silicon) | Dockiva Engine on Hypervisor.framework, no Linux VM | Default for new installations; `linux/arm64` images |
+| macOS | Apple `Virtualization.framework` VM | Optional; requires Linux-generated kernel and root filesystem assets |
 | Windows | Dedicated Dockiva WSL2 guest | Experimental; native runtime parity remains in progress |
 | All | External Docker/Moby endpoint | Supported |
 
@@ -113,7 +166,7 @@ result. It will never delete, alter, or silently switch the source Docker
 engine. Persistent-data migration requires macOS/Windows target validation and
 is not claimed as complete by this Linux build.
 
-## Requirements
+## Build requirements
 
 - Go 1.26.3 or newer
 - Node.js and npm
@@ -495,20 +548,22 @@ in [docs/MILESTONES.md](docs/MILESTONES.md).
 
 ## Dockiva Engine
 
-New Apple Silicon installations default to the bundled ARM64 Dockiva Engine, which starts automatically without terminal setup. Existing engine choices are preserved. The runtime remains for internal testing. Its supported image and lifecycle subset is distinct from the native Linux VM backend. See [DOCKIVA-ENGINE.md](DOCKIVA-ENGINE.md) for project definitions, setup, capabilities and acceptance limits.
+New Apple Silicon installations default to the bundled ARM64 Dockiva Engine,
+which starts automatically without terminal setup. Existing engine choices are
+preserved. Containers run natively under Hypervisor.framework where available
+(no guest kernel), with an interpreter as fallback. See
+[DOCKIVA-ENGINE.md](DOCKIVA-ENGINE.md) for capabilities, limits, and the
+developer test builds.
 
-New containers run natively under Hypervisor.framework where available (no guest kernel), with the interpreter as fallback; the Unicorn adapter has been removed. See the current-state section of [DOCKIVA-ENGINE.md](DOCKIVA-ENGINE.md).
+## Contributing
 
-The separate local `bin/dockiva-redis-test.app` build adds a prepared Redis 7.4.2 preset (originally on the now-removed Unicorn adapter). Use `bin/Launch Dockiva Redis Test.command` for isolated engine state, select Dockiva Engine, and create the Redis preview preset. It listens on `127.0.0.1:16379`; private data survives Stop/Start and Restart. The packaged adapter test passes; native GUI clicks, stock Redis images, PostgreSQL/Valkey and production use remain unqualified.
+Dockiva is open source under the [Apache License 2.0](LICENSE). Contributions
+are welcome; read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull
+request. Report suspected vulnerabilities privately according to
+[SECURITY.md](SECURITY.md).
 
-The Go control-plane test build is `bin/dockiva-go-test.app`. Use
-`bin/Launch Dockiva Go Test.command` for isolated engine state. The helper migrates
-the supported preview API, OCI preparation, lifecycle, logs and recovery to Go/C.
-Existing running engines are reused; this launcher prevents an older Python daemon
-from masking the new build. See [migration evidence](https://github.com/Tomnerb/dockiva-engine/blob/main/docs/DOCKIVA-INTEGRATION.md#dockivad-go-migration).
+Every pull request runs the frontend build and Go test suite. Dependabot checks
+Go, npm, and GitHub Actions dependencies weekly.
 
-The newer `bin/dockiva-profiles-test.app` adds digest-bound profiles and native
-capability negotiation. Use `bin/Launch Dockiva Profiles Test.command` for
-separate state. Inspect includes the selected backend, policy and experimental
-evidence scope; [profile verification](https://github.com/Tomnerb/dockiva-engine/blob/main/docs/DOCKIVA-INTEGRATION.md#compatibility-profiles)
-includes backend replacement, aliases, restart persistence and service tests.
+The long-term macOS design (a SwiftUI/AppKit app over a Go daemon and C runtime)
+is described in [docs/FINAL-ARCHITECTURE-V1.md](docs/FINAL-ARCHITECTURE-V1.md).
