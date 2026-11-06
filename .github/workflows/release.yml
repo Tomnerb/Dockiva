@@ -231,7 +231,10 @@ jobs:
       - name: Build Dockiva Engine
         if: matrix.native
         working-directory: dockiva-engine
-        run: python3 scripts/bundle_dockiva_engine.py --output ../bin
+        run: |
+          # The bundle unpacks FEX's Ubuntu packages (zstd) unless Python is 3.14+.
+          command -v zstd >/dev/null || brew install zstd
+          python3 scripts/bundle_dockiva_engine.py --output ../bin
 
       - name: Build and package
         shell: bash
