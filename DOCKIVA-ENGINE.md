@@ -226,8 +226,9 @@ No Docker Desktop RAM, CPU or battery savings have been established.
 
 Build the helper on Apple Silicon with Go 1.22+, Xcode Command Line Tools
 and Python 3 for development build scripts, plus zstd (`brew install zstd`) unless
-Python is 3.14+: the bundle unpacks FEX's Ubuntu packages, downloaded once (about
-7 MB) and checked against pinned SHA-256 hashes. The native runtime is signed with
+Python is 3.14+: the bundle unpacks FEX's Ubuntu packages, each checked against a
+pinned SHA-256 (FEX's is in the engine repository; the libraries', about 3.6 MB, are
+downloaded once). The native runtime is signed with
 `com.apple.security.hypervisor` (ad-hoc locally, Developer ID for releases).
 PyInstaller is no longer used. In the dockiva-engine checkout:
 
