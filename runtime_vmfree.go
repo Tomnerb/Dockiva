@@ -109,8 +109,8 @@ func (r *vmfreeRuntime) request(ctx context.Context, method, path string, body a
 }
 func (r *vmfreeRuntime) Info(ctx context.Context) ContainerRuntimeInfo {
 	info := ContainerRuntimeInfo{Provider: "vmfree", DisplayName: "Dockiva Engine", Endpoint: "unix://" + filepath.Join(r.home, "engine.sock"), Experimental: true,
-		Capabilities: RuntimeCapabilities{Containers: true, Lifecycle: true, Logs: true, Images: true, PullImages: true, CreateContainer: true, PortPublishing: true},
-		Message:      "Internal testing of linux/arm64 images pulled from registries. Snapshot logs; TCP ports publish on 127.0.0.1. No builds, terminal, volumes, Compose or resource statistics. Not production-qualified."}
+		Capabilities: RuntimeCapabilities{Containers: true, Lifecycle: true, Stats: true, Logs: true, Terminal: true, Images: true, PullImages: true, CreateContainer: true, PortPublishing: true},
+		Message:      "Internal testing of linux/arm64 images pulled from registries. Snapshot logs; TCP ports publish on 127.0.0.1. No builds, volumes or Compose. Not production-qualified."}
 	_, err := r.request(ctx, "GET", "/_ping", nil)
 	info.Connected = err == nil
 	if err != nil {
