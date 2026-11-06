@@ -33,8 +33,18 @@ type terminalSession struct {
 	containerID string
 	execID      string
 	response    client.ExecAttachResult
+	cli         *client.Client // the client the exec was made with: resizes go to the same engine
+	done        func()         // releases cli (composeClient)
 	closed      atomic.Bool
 	seq         atomic.Uint64
+}
+
+// end closes the session's exec stream and releases its client.
+func (t *terminalSession) end() {
+	t.response.Close()
+	if t.done != nil {
+		t.done()
+	}
 }
 
 type logStreamSession struct {
@@ -674,7 +684,8 @@ func (s *DockerService) ComposeProjectAction(project string, action string) erro
 }
 
 func (s *DockerService) GetContainerStats(containerIDs []string) []ContainerResourceStats {
-	if s.activeRuntimeProvider() != "docker" {
+	// Dockiva Engine serves Docker's stats on its own socket (composeClient).
+	if p := s.activeRuntimeProvider(); p != "docker" && p != "vmfree" {
 		if provider, ok := s.currentRuntime().(runtimeStatsProvider); ok {
 			ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 			defer cancel()
@@ -692,6 +703,15 @@ func (s *DockerService) GetContainerStats(containerIDs []string) []ContainerReso
 
 	results := make([]ContainerResourceStats, len(containerIDs))
 
+	cli, done, err := s.composeClient()
+	if err != nil {
+		for i, containerID := range containerIDs {
+			results[i] = ContainerResourceStats{ID: containerID, Error: err.Error()}
+		}
+		return results
+	}
+	defer done()
+
 	var wg sync.WaitGroup
 
 	for i, containerID := range containerIDs {
@@ -703,7 +723,7 @@ func (s *DockerService) GetContainerStats(containerIDs []string) []ContainerReso
 		go func() {
 			defer wg.Done()
 
-			results[i] = s.getSingleContainerStats(containerID)
+			results[i] = getSingleContainerStats(cli, containerID)
 		}()
 	}
 
@@ -712,7 +732,7 @@ func (s *DockerService) GetContainerStats(containerIDs []string) []ContainerReso
 	return results
 }
 
-func (s *DockerService) getSingleContainerStats(containerID string) ContainerResourceStats {
+func getSingleContainerStats(cli *client.Client, containerID string) ContainerResourceStats {
 	result := ContainerResourceStats{
 		ID: containerID,
 	}
@@ -720,7 +740,7 @@ func (s *DockerService) getSingleContainerStats(containerID string) ContainerRes
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	statsResult, err := s.client.Load().ContainerStats(
+	statsResult, err := cli.ContainerStats(
 		ctx,
 		containerID,
 		client.ContainerStatsOptions{
@@ -792,7 +812,8 @@ func (s *DockerService) StartTerminal(containerID string) (string, error) {
 		return "", fmt.Errorf("container ID is required")
 	}
 
-	if s.activeRuntimeProvider() != "docker" {
+	// Dockiva Engine serves Docker's exec on its own socket (composeClient).
+	if p := s.activeRuntimeProvider(); p != "docker" && p != "vmfree" {
 		return s.startRuntimeTerminal(containerID)
 	}
 
@@ -801,10 +822,21 @@ func (s *DockerService) StartTerminal(containerID string) (string, error) {
 		return "", err
 	}
 
+	cli, done, err := s.composeClient()
+	if err != nil {
+		return "", err
+	}
+	opened := false
+	defer func() {
+		if !opened {
+			done()
+		}
+	}()
+
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
-	execResult, err := s.client.Load().ExecCreate(
+	execResult, err := cli.ExecCreate(
 		ctx,
 		containerID,
 		client.ExecCreateOptions{
@@ -824,7 +856,7 @@ func (s *DockerService) StartTerminal(containerID string) (string, error) {
 		return "", err
 	}
 
-	attachResult, err := s.client.Load().ExecAttach(
+	attachResult, err := cli.ExecAttach(
 		context.Background(),
 		execResult.ID,
 		client.ExecAttachOptions{
@@ -838,12 +870,15 @@ func (s *DockerService) StartTerminal(containerID string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	opened = true
 
 	session := &terminalSession{
 		id:          sessionID,
 		containerID: containerID,
 		execID:      execResult.ID,
 		response:    attachResult,
+		cli:         cli,
+		done:        done,
 	}
 
 	s.sessionMu.Lock()
@@ -906,7 +941,7 @@ func (s *DockerService) ResizeTerminal(sessionID string, width uint, height uint
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	_, err := s.client.Load().ExecResize(
+	_, err := session.cli.ExecResize(
 		ctx,
 		session.execID,
 		client.ExecResizeOptions{
@@ -936,7 +971,7 @@ func (s *DockerService) CloseTerminal(sessionID string) {
 			_ = binding.provider.RuntimeTerminalClose(ctx, binding.runtimeID)
 			cancel()
 		} else {
-			session.response.Close()
+			session.end()
 		}
 	}
 
@@ -989,7 +1024,7 @@ func (s *DockerService) readTerminal(session *terminalSession) {
 			s.sessionMu.Unlock()
 
 			if session.closed.CompareAndSwap(false, true) {
-				session.response.Close()
+				session.end()
 			}
 
 			s.emitStreamEvent(
@@ -1259,7 +1294,7 @@ func (s *DockerService) ServiceShutdown() error {
 
 	for _, session := range terminals {
 		if session.closed.CompareAndSwap(false, true) {
-			session.response.Close()
+			session.end()
 		}
 	}
 
