@@ -22,6 +22,13 @@ This section supersedes older capability statements further down the page.
   only by the disk. Symlinks, hardlinks, `#!` entrypoints (also for `exec` and
   healthchecks), any `WorkingDir` and declared volumes (as anonymous volumes) are supported; an image's `USER` (or `docker run -u`)
   is resolved from its `/etc/passwd` and `/etc/group`, and its `HEALTHCHECK` runs.
+- **linux/amd64.** Images with no arm64 variant, or asked for with
+  `--platform linux/amd64` (`docker pull`, `run`, `create`, `build`, and `docker load`
+  of amd64 archives), run their x86-64 programs through FEX, an x86-64 translator
+  that ships inside the engine (`_internal/build/x86`, about 10 MB: FEX 2610 and its
+  arm64 glibc from pinned Ubuntu 24.04 packages). A Python loop runs about 1.5x
+  slower than on the arm64 image, and a container starts in about 0.23 s (0.06 s
+  for arm64).
 - **Networking.** The default bridge and user networks (`docker network create`)
   give each container an address in `10.89.N.0/24` and private ports: two
   containers can both listen on 5432, and unpublished ports stay off the Mac.
@@ -61,7 +68,7 @@ This section supersedes older capability statements further down the page.
   processes. Restart policies and healthchecks are run by each container's
   supervisor; `always` and `unless-stopped` containers start again with the engine.
 - **Builds.** `docker build` runs Dockerfiles through Docker's classic builder
-  API: `FROM` (multi-stage, `AS`, `scratch`, `--platform=linux/arm64`), `RUN`
+  API: `FROM` (multi-stage, `AS`, `scratch`, `--platform`), `RUN`
   (shell and exec form, in a container with the stage's network access), `COPY`
   and `ADD` (globs, `--from` a stage or image, `--chmod`, ADD of URLs and of
   tar/gzip/bzip2 archives), `ENV`, `ARG` and `--build-arg`, `WORKDIR`, `USER`,
@@ -75,9 +82,13 @@ This section supersedes older capability statements further down the page.
   engine answers its BuildKit API with the same builder); `DOCKER_BUILDKIT=0`
   also works. `RUN --mount` (`type=cache`, `bind`, `tmpfs`, and `secret` from
   `docker build --secret`), `RUN --network`, heredocs (`RUN <<EOF`,
-  `COPY <<EOF`), `# syntax=docker/dockerfile:1` and `docker build --push` work.
-  Not yet: `--mount=type=ssh`, `--build-context`, `--output` other than the image
-  store, Git or URL build contexts, xz archives in `ADD`.
+  `COPY <<EOF`), `# syntax=docker/dockerfile:1` and `docker build --push` work, as
+  do `--mount=type=ssh`, `--build-context`, `--output type=local` and `type=tar`, Git
+  and URL build contexts, and xz and zstd archives in `ADD`. `docker build
+  --platform linux/amd64` builds an amd64 image: `RUN` steps go through FEX, and
+  `BUILDPLATFORM` stays linux/arm64, so `FROM --platform=$BUILDPLATFORM` stages
+  cross-compile natively. Not yet: multi-platform builds (one platform per build),
+  `docker build --check`, `--call` and `--print`.
 - **Mounts and volumes.** `-v /host/path:/path[:ro]` binds a host directory or a
   single file; `-v name:/path` and `-v /path` use named and anonymous volumes
   stored in `~/.dockiva-engine/volumes`. A new volume first receives the image's content
@@ -214,7 +225,10 @@ No Docker Desktop RAM, CPU or battery savings have been established.
 ## Developer build
 
 Build the helper on Apple Silicon with Go 1.22+, Xcode Command Line Tools
-and Python 3 for development build scripts. The native runtime is signed with
+and Python 3 for development build scripts, plus zstd (`brew install zstd`) unless
+Python is 3.14+: the bundle unpacks FEX's Ubuntu packages, each checked against a
+pinned SHA-256 (FEX's is in the engine repository; the libraries', about 3.6 MB, are
+downloaded once). The native runtime is signed with
 `com.apple.security.hypervisor` (ad-hoc locally, Developer ID for releases).
 PyInstaller is no longer used. In the dockiva-engine checkout:
 
