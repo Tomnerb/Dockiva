@@ -181,7 +181,7 @@ const backendOptions = computed(() => {
 
   return [
     native,
-    ...(props.platform?.os === "darwin" ? [{ value: "vmfree", title: "Dockiva Engine", desc: "Runs ARM64 Linux containers natively, with no VM. Starts automatically when selected." }] : []),
+    ...(props.platform?.os === "darwin" ? [{ value: "vmfree", title: "Dockiva Engine", desc: "Runs ARM64 Linux containers natively, and AMD64 through FEX, with no VM. Starts automatically when selected." }] : []),
     { value: 'external', title: 'External Docker', desc: 'Use the saved Docker Desktop, System Docker, rootless Docker, or custom endpoint.' },
   ]
 })

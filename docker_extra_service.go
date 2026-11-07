@@ -285,7 +285,7 @@ func (s *DockerService) GetDockerMigrationPreview() DockerMigrationPreview {
 	if preview.Available {
 		preview.Message = "Existing Docker resources were found. Migration is opt-in and leaves Docker unchanged until verification succeeds."
 		if toEngine {
-			preview.Message = "Existing Docker resources were found. Migration copies them and leaves Docker unchanged. Migrate images and volumes before containers; only linux/arm64 images run on Dockiva Engine."
+			preview.Message = "Existing Docker resources were found. Migration copies them and leaves Docker unchanged. Migrate images and volumes before containers; linux/arm64 and linux/amd64 images run on Dockiva Engine."
 		}
 	} else {
 		preview.Message = "Docker is connected, but it has no containers, images, or volumes to migrate."
@@ -357,17 +357,17 @@ func (s *DockerService) MigrateDockerImages() (DockerCLIResult, error) {
 	if len(refs) == 0 {
 		return DockerCLIResult{Output: "No Docker images to migrate."}, nil
 	}
-	// Dockiva Engine runs linux/arm64 only: skip other images instead of failing the run.
+	// Dockiva Engine runs linux/arm64, and linux/amd64 through FEX: skip other images instead of failing the run.
 	var skipped []string
 	if _, ok := s.currentRuntime().(*vmfreeRuntime); ok {
 		s.setDockerMigrationProgress(DockerMigrationStatus{Message: "Checking image platforms…", TotalImages: len(refs)})
-		refs, skipped = splitArm64Refs(refs, func(ref string) (string, error) {
+		refs, skipped = splitEngineRefs(refs, func(ref string) (string, error) {
 			return runDockerCLIAtEndpoint(30*time.Second, "", source, "image", "inspect", "--format", "{{.Architecture}}", ref)
 		})
 	}
 	skippedNote := ""
 	if len(skipped) > 0 {
-		skippedNote = fmt.Sprintf(" Skipped %d not built for linux/arm64: %s.", len(skipped), summarizeMigrationItems(skipped))
+		skippedNote = fmt.Sprintf(" Skipped %d not built for linux/arm64 or linux/amd64: %s.", len(skipped), summarizeMigrationItems(skipped))
 	}
 	if len(refs) == 0 {
 		return DockerCLIResult{Output: "Imported 0 Docker image(s)." + skippedNote}, nil
@@ -1217,10 +1217,6 @@ func (s *DockerService) PullImage(reference string) (DockerCLIResult, error) {
 }
 
 func (s *DockerService) CreateVolume(name string, driver string) (DockerCLIResult, error) {
-	if _, ok := s.currentRuntime().(*vmfreeRuntime); ok {
-		return DockerCLIResult{}, errors.New("operation unsupported by Dockiva Engine")
-	}
-
 	name = strings.TrimSpace(name)
 	driver = strings.TrimSpace(driver)
 
@@ -1236,15 +1232,11 @@ func (s *DockerService) CreateVolume(name string, driver string) (DockerCLIResul
 
 	args = append(args, name)
 
-	output, err := runDockerCLI(2*time.Minute, "", args...)
+	output, err := s.composeCLI(2*time.Minute, "", args...)
 	return DockerCLIResult{Output: output}, err
 }
 
 func (s *DockerService) CreateNetwork(name string, driver string) (DockerCLIResult, error) {
-	if _, ok := s.currentRuntime().(*vmfreeRuntime); ok {
-		return DockerCLIResult{}, errors.New("operation unsupported by Dockiva Engine")
-	}
-
 	name = strings.TrimSpace(name)
 	driver = strings.TrimSpace(driver)
 
@@ -1268,7 +1260,7 @@ func (s *DockerService) CreateNetwork(name string, driver string) (DockerCLIResu
 		name,
 	}
 
-	output, err := runDockerCLI(2*time.Minute, "", args...)
+	output, err := s.composeCLI(2*time.Minute, "", args...)
 	return DockerCLIResult{Output: output}, err
 }
 

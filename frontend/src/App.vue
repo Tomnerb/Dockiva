@@ -2091,7 +2091,7 @@ onBeforeUnmount(() => {
                   {{ activeRuntime?.provider === "vmfree" ? "Dockiva Engine" : "Direct containerd" }}
                 </div>
                 <div class="mt-1 text-xs leading-5 text-zinc-600">
-                  <template v-if="activeRuntime?.provider === 'vmfree'">Runs ARM64 Linux images natively, with no VM. Command accepts a JSON array, for example [&quot;-c&quot;,&quot;busybox echo hello&quot;].</template>
+                  <template v-if="activeRuntime?.provider === 'vmfree'">Runs ARM64 Linux images natively, and AMD64 images through FEX, with no VM. Command accepts a JSON array, for example [&quot;-c&quot;,&quot;busybox echo hello&quot;].</template>
                   <template v-else>Namespace <span class="font-mono text-zinc-400">dockiva</span>.
                   <template v-if="runtimeCapabilities.networks">
                     CNI bridge, host DNS, and localhost TCP publishing are ready.
@@ -2420,7 +2420,7 @@ onBeforeUnmount(() => {
                   <td class="px-4 py-4 text-sm text-zinc-500">{{ formatDate(image.created) }}</td>
                   <td class="px-4 py-4 font-mono text-xs text-zinc-600">{{ image.shortId }}</td>
                   <td class="px-4 py-4 text-right">
-                    <button v-if="activeRuntime?.provider !== 'vmfree'" class="action-button text-red-400" @click="removeImage(image)">
+                    <button class="action-button text-red-400" @click="removeImage(image)">
                       Delete
                     </button>
                   </td>

@@ -109,8 +109,8 @@ func (r *vmfreeRuntime) request(ctx context.Context, method, path string, body a
 }
 func (r *vmfreeRuntime) Info(ctx context.Context) ContainerRuntimeInfo {
 	info := ContainerRuntimeInfo{Provider: "vmfree", DisplayName: "Dockiva Engine", Endpoint: "unix://" + filepath.Join(r.home, "engine.sock"), Experimental: true,
-		Capabilities: RuntimeCapabilities{Containers: true, Lifecycle: true, Stats: true, Logs: true, Terminal: true, Images: true, PullImages: true, CreateContainer: true, PortPublishing: true},
-		Message:      "Internal testing of linux/arm64 images pulled from registries. Snapshot logs; TCP ports publish on 127.0.0.1. No builds, volumes or Compose. Not production-qualified."}
+		Capabilities: RuntimeCapabilities{Containers: true, Lifecycle: true, Stats: true, Logs: true, Terminal: true, Images: true, PullImages: true, CreateContainer: true, Volumes: true, Networks: true, PortPublishing: true, Compose: true},
+		Message:      "Runs linux/arm64 containers directly on Apple Silicon, with no Linux VM, and linux/amd64 through FEX. TCP ports publish on 127.0.0.1."}
 	_, err := r.request(ctx, "GET", "/_ping", nil)
 	info.Connected = err == nil
 	if err != nil {
@@ -257,10 +257,4 @@ func (r *vmfreeRuntime) RuntimeReadLogs(ctx context.Context, id string, tail int
 		data = data[n:]
 	}
 	return RuntimeLogChunk{Data: out.String(), NextOffset: int64(out.Len()), Closed: true}, nil
-}
-func (r *vmfreeRuntime) ListRuntimeVolumes(context.Context) ([]VolumeInfo, error) {
-	return []VolumeInfo{}, nil
-}
-func (r *vmfreeRuntime) ListRuntimeNetworks(context.Context) ([]NetworkInfo, error) {
-	return []NetworkInfo{}, nil
 }
