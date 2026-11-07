@@ -23,6 +23,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
@@ -214,6 +215,8 @@ func serveCoreClient(conn net.Conn, services map[string]any) {
 // front end. It ends when its standard input closes (the front end exited).
 func runCore(socket string, dockerService *DockerService, appService *AppService, settings AppSettings) {
 	ctx, cancel := context.WithCancel(context.Background())
+	parent := os.Getppid() // the front end
+	var updating atomic.Bool
 	if err := dockerService.ServiceStartup(ctx, application.ServiceOptions{}); err != nil {
 		log.Fatal(err)
 	}
@@ -221,7 +224,7 @@ func runCore(socket string, dockerService *DockerService, appService *AppService
 	if updates, err := updaterConfig(); err != nil {
 		log.Printf("core updater: %v", err)
 	} else {
-		coreUpdater = updater.New(coreUpdateHost{quit: cancel})
+		coreUpdater = updater.New(coreUpdateHost{updating: &updating})
 		if err := coreUpdater.Init(updates); err != nil {
 			log.Printf("core updater: %v", err)
 		}
@@ -238,13 +241,27 @@ func runCore(socket string, dockerService *DockerService, appService *AppService
 		log.Printf("core shutdown: %v", err)
 	}
 	_ = os.Remove(socket)
+	if updating.Load() {
+		waitForParent(parent, time.Minute) // see coreUpdateHost
+	}
+}
+
+// waitForParent returns once process parent has exited (this process was handed to
+// launchd), or after limit.
+func waitForParent(parent int, limit time.Duration) {
+	for deadline := time.Now().Add(limit); parent > 1 && os.Getppid() == parent && time.Now().Before(deadline); {
+		time.Sleep(20 * time.Millisecond)
+	}
 }
 
 // argValue is the argument after name on the command line (dockiva --core SOCKET).
 // coreUpdateHost is the updater's host in the core: updater events go to the
-// front end, and Quit (after the swap helper starts) tells the front end to quit
-// before the core exits, so the helper can replace Dockiva.app.
-type coreUpdateHost struct{ quit func() }
+// front end, and Quit (after the swap helper starts) tells the front end to quit.
+// The helper waits for this process, not the front end, and then opens the new
+// Dockiva.app with `open -n`, which starts a second copy while the old one still
+// runs. So the core keeps running until the front end closes its standard input,
+// and then until the front end has exited (runCore).
+type coreUpdateHost struct{ updating *atomic.Bool }
 
 func (coreUpdateHost) Emit(name string, data ...any) bool {
 	var payload any = data
@@ -257,9 +274,8 @@ func (coreUpdateHost) Emit(name string, data ...any) bool {
 func (coreUpdateHost) OnEvent(string, func(any)) func()                      { return func() {} }
 func (coreUpdateHost) OpenWindow(updater.WindowOptions) updater.WindowHandle { return nil } // Window: WindowNone
 func (h coreUpdateHost) Quit() {
+	h.updating.Store(true)
 	emitEvent("dockiva:quit-for-update", nil)
-	time.Sleep(300 * time.Millisecond) // the event reaches the front end before the connection closes
-	h.quit()
 }
 
 func argValue(name string) (string, bool) { return argAfter(os.Args, name) }
