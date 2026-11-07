@@ -8,16 +8,18 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
 )
 
 func TestVMFreeIdentityAndCapabilities(t *testing.T) {
-	r := vmfreeAt(t.TempDir())
+	home := t.TempDir()
+	r := vmfreeAt(home)
 	defer r.Close()
 	info := r.Info(context.Background())
-	if info.Provider != "vmfree" || info.Connected || !info.Experimental || !info.Capabilities.Terminal || !info.Capabilities.Stats || info.Capabilities.Compose || !info.Capabilities.PullImages || !info.Capabilities.PortPublishing {
+	if info.Provider != "vmfree" || info.Connected || !info.Experimental || !info.Capabilities.Terminal || !info.Capabilities.Stats || !info.Capabilities.Compose || !info.Capabilities.Volumes || !info.Capabilities.Networks || !info.Capabilities.PullImages || !info.Capabilities.PortPublishing {
 		t.Fatalf("incorrect preview identity: %+v", info)
 	}
 	s := &DockerService{}
@@ -26,8 +28,9 @@ func TestVMFreeIdentityAndCapabilities(t *testing.T) {
 	if _, err := s.PullImage("alpine"); err == nil || !strings.Contains(err.Error(), "Dockiva Engine is not ready") {
 		t.Fatalf("pull did not stay on VM-free: %v", err)
 	}
-	if err := s.RemoveImage("other-daemon-image", true); err == nil {
-		t.Fatal("unsupported removal reached Docker")
+	// Removal goes to the engine's own Docker socket (not running here), never to Docker.
+	if err := s.RemoveImage("other-daemon-image", true); err == nil || !strings.Contains(err.Error(), filepath.Join(home, "docker.sock")) {
+		t.Fatalf("removal did not stay on Dockiva Engine: %v", err)
 	}
 	if got := runtimeProviderForBackend("vmfree"); got != "vmfree" {
 		t.Fatal(got)
@@ -163,10 +166,12 @@ func TestVMFreeLiveEngine(t *testing.T) {
 	}
 }
 
-// TestVMFreeTerminalAndStatsUseEngineDockerSocket: with Dockiva Engine active, the
-// terminal and the resource figures use the engine's own Docker socket. They were
-// "the active runtime does not support terminal exec" and zeros.
-func TestVMFreeTerminalAndStatsUseEngineDockerSocket(t *testing.T) {
+// TestVMFreeUsesEngineDockerSocket: with Dockiva Engine active, the terminal, the
+// resource figures, live logs, the volume and network lists and image, volume and
+// network removal use the engine's own Docker socket. They were "the active runtime
+// does not support terminal exec", zeros, log snapshots, empty lists and "operation
+// unsupported by Dockiva Engine".
+func TestVMFreeUsesEngineDockerSocket(t *testing.T) {
 	home, err := os.MkdirTemp("", "dv-") // short: a socket path must fit in 104 bytes
 	if err != nil {
 		t.Fatal(err)
@@ -176,9 +181,35 @@ func TestVMFreeTerminalAndStatsUseEngineDockerSocket(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	resized := make(chan string, 1)
+	resized, removed := make(chan string, 1), make(chan string, 3)
 	server := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, q *http.Request) {
 		switch q.URL.Path {
+		case "/v1.45/containers/c1/json": // the log stream asks whether the container has a TTY
+			_, _ = w.Write([]byte(`{"Id":"c1","Config":{"Tty":false}}`))
+		case "/v1.45/containers/c1/logs":
+			if q.URL.Query().Get("follow") != "1" {
+				w.WriteHeader(400)
+				return
+			}
+			line := "2026-11-07T00:00:00.000000000Z hello from the engine\n"
+			_, _ = w.Write(append([]byte{1, 0, 0, 0, 0, 0, 0, byte(len(line))}, line...)) // one stdout frame
+			w.(http.Flusher).Flush()
+			<-q.Context().Done() // a followed stream stays open until the app stops it
+		case "/v1.45/volumes":
+			_, _ = w.Write([]byte(`{"Volumes":[{"Name":"vol1","Driver":"local","Scope":"local"}],"Warnings":[]}`))
+		case "/v1.45/networks":
+			_, _ = w.Write([]byte(`[{"Name":"net1","Id":"n1","Driver":"bridge","Scope":"local"}]`))
+		case "/v1.45/images/img1", "/v1.45/volumes/vol1", "/v1.45/networks/net1":
+			if q.Method != "DELETE" {
+				w.WriteHeader(405)
+				return
+			}
+			removed <- strings.TrimPrefix(q.URL.Path, "/v1.45/")
+			if strings.HasPrefix(q.URL.Path, "/v1.45/images/") {
+				_, _ = w.Write([]byte(`[{"Deleted":"img1"}]`))
+				return
+			}
+			w.WriteHeader(204)
 		case "/v1.45/containers/c1/exec":
 			var body struct {
 				Tty bool
@@ -225,7 +256,7 @@ func TestVMFreeTerminalAndStatsUseEngineDockerSocket(t *testing.T) {
 
 	r := vmfreeAt(home)
 	defer r.Close()
-	s := &DockerService{terminalSessions: map[string]*terminalSession{}}
+	s := &DockerService{terminalSessions: map[string]*terminalSession{}, logStreams: map[string]*logStreamSession{}}
 	s.replaceRuntime(r)
 	id, err := s.StartTerminal("c1")
 	if err != nil {
@@ -235,13 +266,13 @@ func TestVMFreeTerminalAndStatsUseEngineDockerSocket(t *testing.T) {
 		t.Fatal(err)
 	}
 	var got []byte
-	for !strings.Contains(string(got), "echo hi\n") {
+	for deadline := time.After(5 * time.Second); !strings.Contains(string(got), "echo hi\n"); {
 		select {
 		case ev := <-events:
 			if out, ok := ev.Data.(StreamOutputEvent); ok && out.StreamID == id {
 				got = append(got, out.Data...)
 			}
-		case <-time.After(5 * time.Second):
+		case <-deadline:
 			t.Fatalf("no output from the engine's exec; got %q", got)
 		}
 	}
@@ -261,5 +292,73 @@ func TestVMFreeTerminalAndStatsUseEngineDockerSocket(t *testing.T) {
 	stats := s.GetContainerStats([]string{"c1"})
 	if len(stats) != 1 || stats[0].Error != "" || stats[0].MemoryUsage != 50<<20 || stats[0].PIDs != 7 || int(stats[0].CPUPercent+0.5) != 80 {
 		t.Fatalf("stats: %+v", stats)
+	}
+
+	logID, err := s.StartLogStream("c1", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var logs []byte
+	for deadline := time.After(5 * time.Second); !strings.Contains(string(logs), "hello from the engine"); {
+		select {
+		case ev := <-events:
+			if out, ok := ev.Data.(StreamOutputEvent); ok && out.StreamID == logID {
+				logs = append(logs, out.Data...)
+			}
+		case <-deadline:
+			t.Fatalf("no live log output from the engine; got %q", logs)
+		}
+	}
+	s.StopLogStream(logID)
+
+	if vols, err := s.ListVolumes(); err != nil || len(vols) != 1 || vols[0].Name != "vol1" {
+		t.Fatalf("volumes: %+v %v", vols, err)
+	}
+	if nets, err := s.ListNetworks(); err != nil || len(nets) != 1 || nets[0].Name != "net1" {
+		t.Fatalf("networks: %+v %v", nets, err)
+	}
+	if err := s.RemoveImage("img1", true); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.RemoveVolume("vol1", true); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.RemoveNetwork("net1"); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"images/img1", "volumes/vol1", "networks/net1"} {
+		if got := <-removed; got != want {
+			t.Fatalf("removed %s, want %s", got, want)
+		}
+	}
+}
+
+// TestVMFreeCreatesVolumesAndNetworksOnEngine: with Dockiva Engine active, creating a
+// volume or a network runs the docker CLI against the engine's socket. Both were refused.
+func TestVMFreeCreatesVolumesAndNetworksOnEngine(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the fake docker CLI is a shell script")
+	}
+	bin, home := t.TempDir(), t.TempDir()
+	calls := filepath.Join(bin, "calls")
+	script := "#!/bin/sh\nprintf '%s\\n' \"$*\" >> '" + calls + "'\necho created\n"
+	if err := os.WriteFile(filepath.Join(bin, "docker"), []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin)
+	r := vmfreeAt(home)
+	defer r.Close()
+	s := &DockerService{}
+	s.replaceRuntime(r)
+	if _, err := s.CreateVolume("vol1", ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.CreateNetwork("net1", ""); err != nil {
+		t.Fatal(err)
+	}
+	host := "--host unix://" + filepath.Join(home, "docker.sock")
+	want := host + " volume create vol1\n" + host + " network create --driver bridge net1\n"
+	if data, err := os.ReadFile(calls); err != nil || string(data) != want {
+		t.Fatalf("docker CLI calls %q, want %q (%v)", data, want, err)
 	}
 }
