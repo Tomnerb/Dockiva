@@ -66,6 +66,20 @@ struct MenuBarLabel: View {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     // The menu bar panel keeps containers in reach with the window closed.
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
+
+    /// An update replaces Dockiva.app and opens it with `open -n`. Older updaters did that
+    /// while the old copy still ran, so a copy launched earlier from this same bundle path
+    /// is asked to quit: the new version replaces it.
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        let me = NSRunningApplication.current
+        guard let id = Bundle.main.bundleIdentifier, let launched = me.launchDate else { return }
+        for other in NSRunningApplication.runningApplications(withBundleIdentifier: id)
+        where other.processIdentifier != me.processIdentifier
+            && other.bundleURL?.path == Bundle.main.bundleURL.path
+            && (other.launchDate ?? .distantFuture) < launched {
+            other.terminate()
+        }
+    }
 }
 
 enum SidebarItem: String, CaseIterable, Identifiable {
