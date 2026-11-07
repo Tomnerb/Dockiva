@@ -69,7 +69,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// An update replaces Dockiva.app and opens it with `open -n`. Older updaters did that
     /// while the old copy still ran, so a copy launched earlier from this same bundle path
-    /// is asked to quit: the new version replaces it.
+    /// is closed: the new version replaces it. Forced, because that copy still shows the
+    /// update sheet, and a copy with a sheet open ignores terminate.
     func applicationDidFinishLaunching(_ notification: Notification) {
         let me = NSRunningApplication.current
         guard let id = Bundle.main.bundleIdentifier, let launched = me.launchDate else { return }
@@ -77,7 +78,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         where other.processIdentifier != me.processIdentifier
             && other.bundleURL?.path == Bundle.main.bundleURL.path
             && (other.launchDate ?? .distantFuture) < launched {
-            other.terminate()
+            other.forceTerminate()
         }
     }
 }

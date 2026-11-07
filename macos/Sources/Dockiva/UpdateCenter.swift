@@ -115,8 +115,16 @@ final class UpdateCenter {
         }
     }
 
+    /// AppKit ignores terminate while a window has a sheet attached, and an update
+    /// finishes with the update sheet open unless "Later" closed it. So the sheets
+    /// end first; otherwise the app stays open, the core waits for it, and the swap
+    /// helper gives up after 30 s.
     private func quit() {
         quitting = true
+        sheetPresented = false
+        for window in NSApp.windows {
+            if let sheet = window.attachedSheet { window.endSheet(sheet) }
+        }
         NSApp.terminate(nil)
     }
 
