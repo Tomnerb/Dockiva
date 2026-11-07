@@ -12,15 +12,15 @@ import (
 	"testing"
 )
 
-func TestSplitArm64Refs(t *testing.T) {
-	arch := map[string]string{"alpine:latest": "arm64", "amd:1": "amd64", "nginx:alpine": "arm64\n"}
-	keep, skipped := splitArm64Refs([]string{"alpine:latest", "amd:1", "nginx:alpine", "gone:1"}, func(ref string) (string, error) {
+func TestSplitEngineRefs(t *testing.T) {
+	arch := map[string]string{"alpine:latest": "arm64", "amd:1": "amd64", "nginx:alpine": "arm64\n", "pi:1": "arm"}
+	keep, skipped := splitEngineRefs([]string{"alpine:latest", "amd:1", "nginx:alpine", "pi:1", "gone:1"}, func(ref string) (string, error) {
 		if a, ok := arch[ref]; ok {
 			return a, nil
 		}
 		return "", errors.New("no such image")
 	})
-	if !reflect.DeepEqual(keep, []string{"alpine:latest", "nginx:alpine"}) || !reflect.DeepEqual(skipped, []string{"amd:1", "gone:1"}) {
+	if !reflect.DeepEqual(keep, []string{"alpine:latest", "amd:1", "nginx:alpine"}) || !reflect.DeepEqual(skipped, []string{"pi:1", "gone:1"}) {
 		t.Fatalf("keep %v skipped %v", keep, skipped)
 	}
 }

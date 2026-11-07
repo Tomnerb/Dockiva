@@ -37,11 +37,12 @@ func (s *DockerService) migrationTargetName() string {
 
 func engineNotFound(err error) bool { return err != nil && strings.Contains(err.Error(), "HTTP 404") }
 
-// splitArm64Refs keeps the images Dockiva Engine can run (linux/arm64). archOf reads
-// an image's architecture on the source; an image it cannot read is skipped too.
-func splitArm64Refs(refs []string, archOf func(string) (string, error)) (keep, skipped []string) {
+// splitEngineRefs keeps the images Dockiva Engine can run: linux/arm64, and linux/amd64
+// through FEX. archOf reads an image's architecture on the source; an image it cannot
+// read is skipped too.
+func splitEngineRefs(refs []string, archOf func(string) (string, error)) (keep, skipped []string) {
 	for _, ref := range refs {
-		if arch, err := archOf(ref); err == nil && strings.TrimSpace(arch) == "arm64" {
+		if arch, err := archOf(ref); err == nil && (strings.TrimSpace(arch) == "arm64" || strings.TrimSpace(arch) == "amd64") {
 			keep = append(keep, ref)
 		} else {
 			skipped = append(skipped, ref)
@@ -635,7 +636,7 @@ func (s *DockerService) migrateDockerContainersToEngine(r *vmfreeRuntime) (Docke
 			}
 			imagePath := (&url.URL{Path: body.Image}).EscapedPath()
 			if _, err := r.request(ctx, "GET", "/images/"+imagePath+"/json", nil); err != nil {
-				return fmt.Sprintf("image %s is not in Dockiva Engine (migrate images first; only linux/arm64 images are copied)", body.Image)
+				return fmt.Sprintf("image %s is not in Dockiva Engine (migrate images first; only linux/arm64 and linux/amd64 images are copied)", body.Image)
 			}
 			for _, network := range networks {
 				if _, done := networkErr[network]; !done {

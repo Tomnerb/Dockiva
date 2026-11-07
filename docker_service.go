@@ -7,7 +7,6 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"sort"
@@ -325,14 +324,16 @@ func (s *DockerService) ListImages() ([]ImageInfo, error) {
 }
 
 func (s *DockerService) RemoveImage(imageID string, force bool) error {
-	if _, ok := s.currentRuntime().(*vmfreeRuntime); ok {
-		return errors.New("operation unsupported by Dockiva Engine")
+	cli, done, err := s.composeClient()
+	if err != nil {
+		return err
 	}
+	defer done()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	_, err := s.client.Load().ImageRemove(
+	_, err = cli.ImageRemove(
 		ctx,
 		imageID,
 		client.ImageRemoveOptions{
@@ -351,7 +352,13 @@ func (s *DockerService) ListVolumes() ([]VolumeInfo, error) {
 		return runtime.ListRuntimeVolumes(ctx)
 	}
 
-	result, err := s.client.Load().VolumeList(
+	cli, done, err := s.composeClient()
+	if err != nil {
+		return nil, err
+	}
+	defer done()
+
+	result, err := cli.VolumeList(
 		ctx,
 		client.VolumeListOptions{},
 	)
@@ -394,10 +401,6 @@ func (s *DockerService) ListVolumes() ([]VolumeInfo, error) {
 }
 
 func (s *DockerService) RemoveVolume(name string, force bool) error {
-	if _, ok := s.currentRuntime().(*vmfreeRuntime); ok {
-		return errors.New("operation unsupported by Dockiva Engine")
-	}
-
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 
@@ -406,7 +409,13 @@ func (s *DockerService) RemoveVolume(name string, force bool) error {
 		return runtime.RemoveRuntimeVolume(ctx, name)
 	}
 
-	_, err := s.client.Load().VolumeRemove(
+	cli, done, err := s.composeClient()
+	if err != nil {
+		return err
+	}
+	defer done()
+
+	_, err = cli.VolumeRemove(
 		ctx,
 		name,
 		client.VolumeRemoveOptions{
@@ -424,7 +433,13 @@ func (s *DockerService) ListNetworks() ([]NetworkInfo, error) {
 		return runtime.ListRuntimeNetworks(ctx)
 	}
 
-	result, err := s.client.Load().NetworkList(
+	cli, done, err := s.composeClient()
+	if err != nil {
+		return nil, err
+	}
+	defer done()
+
+	result, err := cli.NetworkList(
 		ctx,
 		client.NetworkListOptions{},
 	)
@@ -465,14 +480,16 @@ func (s *DockerService) ListNetworks() ([]NetworkInfo, error) {
 }
 
 func (s *DockerService) RemoveNetwork(networkID string) error {
-	if _, ok := s.currentRuntime().(*vmfreeRuntime); ok {
-		return errors.New("operation unsupported by Dockiva Engine")
+	cli, done, err := s.composeClient()
+	if err != nil {
+		return err
 	}
+	defer done()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 
-	_, err := s.client.Load().NetworkRemove(
+	_, err = cli.NetworkRemove(
 		ctx,
 		networkID,
 		client.NetworkRemoveOptions{},
@@ -1057,18 +1074,25 @@ func (s *DockerService) StartLogStream(containerID string, tail int) (string, er
 		tail = 5000
 	}
 
-	if s.activeRuntimeProvider() != "docker" {
+	if p := s.activeRuntimeProvider(); p != "docker" && p != "vmfree" {
 		return s.startRuntimeLogStream(containerID, tail)
 	}
 
-	streamID, err := newSessionID()
+	cli, done, err := s.composeClient()
 	if err != nil {
 		return "", err
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
+	streamID, err := newSessionID()
+	if err != nil {
+		done()
+		return "", err
+	}
 
-	reader, err := s.client.Load().ContainerLogs(
+	ctx, stop := context.WithCancel(context.Background())
+	cancel := sync.OnceFunc(func() { stop(); done() }) // the stream's end releases its client
+
+	reader, err := cli.ContainerLogs(
 		ctx,
 		containerID,
 		client.ContainerLogsOptions{
@@ -1084,7 +1108,7 @@ func (s *DockerService) StartLogStream(containerID string, tail int) (string, er
 		return "", err
 	}
 
-	tty := s.containerUsesTTY(containerID)
+	tty := containerUsesTTY(cli, containerID)
 
 	session := &logStreamSession{
 		id:          streamID,
@@ -1235,11 +1259,11 @@ func streamDockerOutput(
 	}
 }
 
-func (s *DockerService) containerUsesTTY(containerID string) bool {
+func containerUsesTTY(cli *client.Client, containerID string) bool {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	result, err := s.client.Load().ContainerInspect(
+	result, err := cli.ContainerInspect(
 		ctx,
 		containerID,
 		client.ContainerInspectOptions{},
