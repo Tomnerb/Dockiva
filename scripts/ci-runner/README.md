@@ -70,6 +70,8 @@ Dockerfile (checksum from the release notes), and `IMAGE` in the script.
 
 ## Limits
 
+- The job container gets 8 GiB (`MEMORY` in the script; Dockiva's default is
+  2 GiB, too little for a cold cgo `go test ./...`).
 - One runner, one job at a time: concurrent runs queue.
 - The runner is arm64; GitHub-hosted `ubuntu-24.04` is amd64.
 - Repository settings keep "Require approval for first-time contributors"

@@ -8,6 +8,8 @@ set -u
 REPO=${REPO:-Tomnerb/Dockiva}
 CONTEXT=${DOCKER_CONTEXT:-dockiva}
 IMAGE=${IMAGE:-dockiva-gh-runner:2.338.2}
+# Dockiva gives containers 2 GiB by default; a cold cgo `go test ./...` needs more.
+MEMORY=${MEMORY:-8g}
 HERE=$(cd "$(dirname "$0")" && pwd)
 export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
 
@@ -26,5 +28,5 @@ while :; do
         -f 'labels[]=dockiva' --jq .encoded_jit_config) || { sleep 60; continue; }
 
   echo "$(date '+%F %T') $name waiting for a job"
-  docker_ run --rm --name "$name" "$IMAGE" --jitconfig "$jit" || sleep 10
+  docker_ run --rm -m "$MEMORY" --name "$name" "$IMAGE" --jitconfig "$jit" || sleep 10
 done
