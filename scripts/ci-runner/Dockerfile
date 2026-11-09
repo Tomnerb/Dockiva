@@ -9,8 +9,6 @@ ARG RUNNER_SHA256=670adb2f268fe21dcbb58b3db0e0aa9d5b3bddfe2c651481336e561ff86de9
 RUN apt-get update \
  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
       ca-certificates curl git jq sudo tar unzip xz-utils zstd \
- && useradd -m -s /bin/bash runner \
- && echo 'runner ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/runner \
  && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /home/runner
@@ -19,8 +17,10 @@ RUN curl -fsSL -o runner.tgz \
  && echo "${RUNNER_SHA256}  runner.tgz" | sha256sum -c - \
  && tar xzf runner.tgz && rm runner.tgz \
  && ./bin/installdependencies.sh \
- && rm -rf /var/lib/apt/lists/* \
- && chown -R runner:runner /home/runner
+ && rm -rf /var/lib/apt/lists/*
 
-USER runner
+# Root, not a sudo user: on Dockiva Engine, once apt drops to _apt (which sets
+# no_new_privs), later sudo calls in the container can't regain root. Each job
+# gets a fresh container, so root here doesn't outlive the job.
+ENV RUNNER_ALLOW_RUNASROOT=1
 ENTRYPOINT ["./run.sh"]

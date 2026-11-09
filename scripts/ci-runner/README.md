@@ -6,8 +6,9 @@ GitHub Actions runner with the label `dockiva`. The runner is GitHub's
 
 ## How it works
 
-- `Dockerfile` builds `dockiva-gh-runner:<version>`: Ubuntu 24.04, the pinned
-  runner release (SHA-256 checked), passwordless `sudo` for `apt-get`.
+- `Dockerfile` builds `dockiva-gh-runner:<version>`: Ubuntu 24.04 and the
+  pinned runner release (SHA-256 checked). The runner runs as root (`sudo`
+  still works for steps that call it); see the Dockerfile for why.
 - `run-dockiva-runner.sh` loops on the Mac: it asks GitHub for a single-use
   JIT runner config (`generate-jitconfig`) with the Mac's `gh` login, runs one
   job in a fresh container (`docker run --rm`), then starts over. Each job gets
