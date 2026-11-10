@@ -255,6 +255,9 @@ func (r *vmfreeRuntime) CreateRuntimeContainer(ctx context.Context, q RuntimeCre
 	if len(q.Command) > 0 {
 		body["Cmd"] = q.Command
 	}
+	if len(q.Env) > 0 {
+		body["Env"] = q.Env
+	}
 	data, err := r.request(ctx, "POST", "/containers/create?name="+url.QueryEscape(q.Name), body)
 	if err != nil {
 		return ContainerInfo{}, err

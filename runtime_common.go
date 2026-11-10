@@ -68,6 +68,7 @@ type RuntimeCreateContainerRequest struct {
 	Command      []string             `json:"command"`
 	AutoStart    bool                 `json:"autoStart"`
 	PortMappings []RuntimePortMapping `json:"portMappings"`
+	Env          []string             `json:"env"` // KEY=VALUE
 }
 
 // ContainerRuntime is the runtime-neutral lifecycle seam.
@@ -266,6 +267,32 @@ func (s *DockerService) RuntimePullImage(
 	defer cancel()
 
 	return puller.PullRuntimeImage(ctx, reference)
+}
+
+// CreateContainer runs an image as a new container, as `docker run -d` does: when
+// the runtime does not have the image yet, it pulls it and tries again.
+func (s *DockerService) CreateContainer(request RuntimeCreateContainerRequest) (ContainerInfo, error) {
+	request.Name, request.Image = strings.TrimSpace(request.Name), strings.TrimSpace(request.Image)
+	if request.Name == "" || request.Image == "" {
+		return ContainerInfo{}, errors.New("an image and a container name are required")
+	}
+	runtime := s.currentRuntime()
+	creator, ok := runtime.(runtimeContainerCreator)
+	if !ok {
+		return ContainerInfo{}, errors.New("the active runtime cannot create containers from Dockiva")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute) // a first pull can be large
+	defer cancel()
+	created, err := creator.CreateRuntimeContainer(ctx, request)
+	puller, canPull := runtime.(runtimeImagePuller)
+	missing := err != nil && (strings.Contains(strings.ToLower(err.Error()), "no such image") || strings.Contains(err.Error(), "is not cached"))
+	if !missing || !canPull {
+		return created, err
+	}
+	if _, err = puller.PullRuntimeImage(ctx, request.Image); err != nil {
+		return ContainerInfo{}, fmt.Errorf("pull %s: %w", request.Image, err)
+	}
+	return creator.CreateRuntimeContainer(ctx, request)
 }
 
 func (s *DockerService) RuntimeCreateContainer(
