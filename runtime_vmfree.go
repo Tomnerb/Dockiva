@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/binary"
@@ -62,20 +63,11 @@ func (r *vmfreeRuntime) request(ctx context.Context, method, path string, body a
 		ctx, cancel = context.WithTimeout(ctx, 25*time.Second)
 		defer cancel()
 	}
-	// Read the token on each request so an engine restart does not require restarting Dockiva.
-	data, err := os.ReadFile(filepath.Join(r.home, "docker-client", "config.json"))
+	token, err := r.token()
 	if err != nil {
-		return nil, fmt.Errorf("Dockiva Engine is not ready: %w", err)
-	}
-	var config struct{ HttpHeaders map[string]string }
-	if err = json.Unmarshal(data, &config); err != nil {
 		return nil, err
 	}
-	token := config.HttpHeaders["X-VMFree-Token"]
-	if len(token) != 64 {
-		return nil, errors.New("invalid Dockiva Engine authentication configuration")
-	}
-	var payload []byte
+	var data, payload []byte
 	if body != nil {
 		payload, err = json.Marshal(body)
 		if err != nil {
@@ -106,6 +98,52 @@ func (r *vmfreeRuntime) request(ctx context.Context, method, path string, body a
 		return nil, fmt.Errorf("Dockiva Engine HTTP %d: %s", resp.StatusCode, failure.Message)
 	}
 	return data, nil
+}
+
+// token is read on each request so an engine restart does not require restarting Dockiva.
+func (r *vmfreeRuntime) token() (string, error) {
+	data, err := os.ReadFile(filepath.Join(r.home, "docker-client", "config.json"))
+	if err != nil {
+		return "", fmt.Errorf("Dockiva Engine is not ready: %w", err)
+	}
+	var config struct{ HttpHeaders map[string]string }
+	if err = json.Unmarshal(data, &config); err != nil {
+		return "", err
+	}
+	token := config.HttpHeaders["X-VMFree-Token"]
+	if len(token) != 64 {
+		return "", errors.New("invalid Dockiva Engine authentication configuration")
+	}
+	return token, nil
+}
+
+// streamEvents follows the engine's GET /events (JSON lines) until ctx is done or the
+// connection ends, as when the engine restarts. connected runs once it is following.
+func (r *vmfreeRuntime) streamEvents(ctx context.Context, each func([]byte), connected func()) error {
+	token, err := r.token()
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequestWithContext(ctx, "GET", "http://vmfree/v1.45/events", nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("X-VMFree-Token", token)
+	resp, err := r.http.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("Dockiva Engine events: HTTP %d", resp.StatusCode)
+	}
+	connected()
+	scanner := bufio.NewScanner(resp.Body)
+	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
+	for scanner.Scan() {
+		each(scanner.Bytes())
+	}
+	return scanner.Err()
 }
 func (r *vmfreeRuntime) Info(ctx context.Context) ContainerRuntimeInfo {
 	info := ContainerRuntimeInfo{Provider: "vmfree", DisplayName: "Dockiva Engine", Endpoint: "unix://" + filepath.Join(r.home, "engine.sock"), Experimental: true,
