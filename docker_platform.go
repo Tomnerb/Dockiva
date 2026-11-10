@@ -594,83 +594,71 @@ func (s *DockerService) ServiceStartup(
 	return nil
 }
 
+// watchDockerEvents turns the active runtime's events into dockerChangedEvent, so
+// the app refreshes when containers change outside it (docker run, CI runners).
+// Dockiva Engine streams its own /events; other runtimes use the docker CLI's
+// current context. The watch follows the runtime the user selects.
 func (s *DockerService) watchDockerEvents(ctx context.Context) {
-	for {
-		if ctx.Err() != nil {
-			return
+	for ctx.Err() == nil {
+		engine, isEngine := s.currentRuntime().(*vmfreeRuntime)
+		watch, stop := context.WithCancel(ctx)
+		go func() {
+			for sleepContext(watch, 2*time.Second) {
+				if _, now := s.currentRuntime().(*vmfreeRuntime); now != isEngine {
+					stop()
+				}
+			}
+		}()
+		if isEngine {
+			_ = engine.streamEvents(watch, func(line []byte) {
+				emitDockerEventLine(line)
+			}, func() {
+				// Events missed while disconnected: refresh once on (re)connect.
+				emitEvent(dockerChangedEvent, DockerEventNotice{Type: "engine", Action: "connected"})
+			})
+		} else {
+			watchDockerCLIEvents(watch)
 		}
-
-		dockerPath, err := dockerCLIPath()
-		if err != nil {
-			if !sleepContext(ctx, 3*time.Second) {
-				return
-			}
-			continue
-		}
-
-		cmd := exec.CommandContext(
-			ctx,
-			dockerPath,
-			"events",
-			"--format",
-			"{{json .}}",
-		)
-
-		stdout, err := cmd.StdoutPipe()
-		if err != nil {
-			if !sleepContext(ctx, 2*time.Second) {
-				return
-			}
-			continue
-		}
-
-		if err := cmd.Start(); err != nil {
-			if !sleepContext(ctx, 2*time.Second) {
-				return
-			}
-			continue
-		}
-
-		scanner := bufio.NewScanner(stdout)
-		scanner.Buffer(make([]byte, 64*1024), 1024*1024)
-
-		for scanner.Scan() {
-			if ctx.Err() != nil {
-				_ = cmd.Process.Kill()
-				_ = cmd.Wait()
-				return
-			}
-
-			line := scanner.Bytes()
-
-			var raw struct {
-				Type   string `json:"Type"`
-				Action string `json:"Action"`
-				ID     string `json:"id"`
-				Time   int64  `json:"time"`
-			}
-
-			if err := json.Unmarshal(line, &raw); err != nil {
-				continue
-			}
-
-			emitEvent(
-				dockerChangedEvent,
-				DockerEventNotice{
-					Type:   raw.Type,
-					Action: raw.Action,
-					ID:     raw.ID,
-					Time:   raw.Time,
-				},
-			)
-		}
-
-		_ = cmd.Wait()
-
+		stop()
 		if !sleepContext(ctx, 1500*time.Millisecond) {
 			return
 		}
 	}
+}
+
+// watchDockerCLIEvents runs one `docker events` session until it ends or ctx is done.
+func watchDockerCLIEvents(ctx context.Context) {
+	dockerPath, err := dockerCLIPath()
+	if err != nil {
+		return
+	}
+	cmd := exec.CommandContext(ctx, dockerPath, "events", "--format", "{{json .}}")
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return
+	}
+	if err := cmd.Start(); err != nil {
+		return
+	}
+	scanner := bufio.NewScanner(stdout)
+	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
+	for scanner.Scan() {
+		emitDockerEventLine(scanner.Bytes())
+	}
+	_ = cmd.Wait()
+}
+
+func emitDockerEventLine(line []byte) {
+	var raw struct {
+		Type   string `json:"Type"`
+		Action string `json:"Action"`
+		ID     string `json:"id"`
+		Time   int64  `json:"time"`
+	}
+	if err := json.Unmarshal(line, &raw); err != nil {
+		return
+	}
+	emitEvent(dockerChangedEvent, DockerEventNotice{Type: raw.Type, Action: raw.Action, ID: raw.ID, Time: raw.Time})
 }
 
 func sleepContext(ctx context.Context, duration time.Duration) bool {
