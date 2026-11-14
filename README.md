@@ -18,7 +18,7 @@
 
 ## Why Dockiva
 
-- **No Linux VM on Apple Silicon.** Dockiva Engine runs container code directly
+- **No Linux VM on Apple Silicon.** [Dockiva Engine](https://github.com/Tomnerb/dockiva-engine) runs container code directly
   on the CPU through Hypervisor.framework. There is no guest kernel to boot and
   no VM holding gigabytes of RAM.
 - **Fast where you feel it.** `docker run` starts in about 80 ms, and builds keep
@@ -554,6 +554,11 @@ preserved. Containers run natively under Hypervisor.framework where available
 (no guest kernel), with an interpreter as fallback. See
 [DOCKIVA-ENGINE.md](DOCKIVA-ENGINE.md) for capabilities, limits, and the
 developer test builds.
+
+The engine's source is in
+[Tomnerb/dockiva-engine](https://github.com/Tomnerb/dockiva-engine), also under
+Apache 2.0. Each Dockiva release bundles the engine commit pinned in
+[`DOCKIVA_ENGINE_REF`](DOCKIVA_ENGINE_REF).
 
 ## Contributing
 
