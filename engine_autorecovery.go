@@ -13,17 +13,18 @@ func (s *DockerService) AutoRecoverEngine(
 ) {
 	backend = normalizeEngineBackend(backend)
 	if backend == "vmfree" {
+		r := newVMFreeRuntime()
+		defer r.Close()
 		if startEngine {
-			r := newVMFreeRuntime()
-			defer r.Close()
 			if err := startVMFreeEngine(r); err != nil {
 				log.Printf("Dockiva Engine startup: %v", err)
-			} else {
-				if err := useDockivaCLIContext(r.home); err != nil {
-					log.Printf("docker CLI context: %v", err)
-				}
-				s.emitEngineRecovered("vmfree-started")
+				return
 			}
+			s.emitEngineRecovered("vmfree-started")
+		}
+		// Chosen engine, so the docker CLI follows it even when launch does not start it.
+		if err := useDockivaCLIContext(r.home); err != nil {
+			log.Printf("docker CLI context: %v", err)
 		}
 		return
 	}
