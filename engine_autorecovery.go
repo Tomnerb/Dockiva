@@ -19,6 +19,9 @@ func (s *DockerService) AutoRecoverEngine(
 			if err := startVMFreeEngine(r); err != nil {
 				log.Printf("Dockiva Engine startup: %v", err)
 			} else {
+				if err := useDockivaCLIContext(r.home); err != nil {
+					log.Printf("docker CLI context: %v", err)
+				}
 				s.emitEngineRecovered("vmfree-started")
 			}
 		}
