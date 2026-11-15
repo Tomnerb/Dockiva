@@ -1,5 +1,9 @@
 # Dockiva Engine: the default engine on Apple Silicon
 
+Source: [Tomnerb/dockiva-engine](https://github.com/Tomnerb/dockiva-engine)
+(Apache 2.0). Each Dockiva release bundles the engine commit pinned in
+[`DOCKIVA_ENGINE_REF`](DOCKIVA_ENGINE_REF).
+
 Dockiva Engine was called the VM-free engine before October 2026. Settings keep
 the backend value `vmfree`, and an existing `~/.vmfree` moves to `~/.dockiva-engine`
 the next time the engine starts while nothing uses it (a link stays at the old path).
