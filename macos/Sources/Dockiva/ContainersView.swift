@@ -8,6 +8,7 @@ struct ContainersView: View {
     @State private var search = ""
     @State private var filter = "all"
     @State private var hovered: ContainerInfo.ID?
+    @State private var creating = false
 
     private let accent = SidebarItem.containers.accent
 
@@ -43,7 +44,7 @@ struct ContainersView: View {
                     ScrollView {
                         EmptyStateCard(eyebrow: "PICK ONE", title: model.containers.isEmpty ? "No containers yet" : "Select a container",
                                        detail: model.containers.isEmpty
-                                           ? "Run one with docker run or docker compose up; it shows up here right away."
+                                           ? "Press + to run an image, or use docker run or docker compose up; it shows up here right away."
                                            : "See its live usage, logs and a terminal, and start, stop or remove it.",
                                        symbol: "shippingbox.fill", accent: accent)
                             .padding(28)
@@ -68,8 +69,13 @@ struct ContainersView: View {
                     Text("Containers").font(.title2.bold())
                     Text("\(model.runningCount) running · \(model.containers.count) total").font(.caption).foregroundStyle(.secondary)
                 }
+                Spacer()
+                Button { creating = true } label: { Image(systemName: "plus") }
+                    .buttonStyle(SecondaryButtonStyle())
+                    .help("New container")
             }
             .padding(.top, 14)
+            .sheet(isPresented: $creating) { NewContainerSheet() }
             SearchField(prompt: "Search containers", text: $search)
             FilterPills(choices: [("All", "all"), ("Running", "running"), ("Stopped", "stopped")], selection: $filter)
             ScrollView {
@@ -104,7 +110,7 @@ struct ContainersView: View {
         let isSelected = selection == c.id
         return Button { selection = c.id } label: {
             HStack(spacing: 10) {
-                StatusDot(running: c.isRunning)
+                ImageIcon(image: c.image, running: c.isRunning)
                 VStack(alignment: .leading, spacing: 1) {
                     Text(c.composeService ?? c.name).font(.system(size: 13, weight: .semibold, design: .rounded)).lineLimit(1)
                     Text(c.image).font(.caption).foregroundStyle(.secondary).lineLimit(1)

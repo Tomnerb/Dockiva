@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Installed by scripts/ci-runner/README.md; __SCRIPT__ is replaced with the script's absolute path. -->
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>dev.dockiva.gh-runner</string>
+  <key>ProgramArguments</key>
+  <array><string>/bin/sh</string><string>__SCRIPT__</string></array>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>StandardOutPath</key><string>/tmp/dockiva-gh-runner.log</string>
+  <key>StandardErrorPath</key><string>/tmp/dockiva-gh-runner.log</string>
+</dict>
+</plist>

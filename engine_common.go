@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -144,7 +145,16 @@ func (s *DockerService) SelectEngineBackend(
 		// Keep this identity even while offline; never expose the previous Docker store.
 		r := newVMFreeRuntime()
 		s.replaceRuntime(r)
-		return "vmfree", startVMFreeEngine(r)
+		if err := startVMFreeEngine(r); err != nil {
+			return "vmfree", err
+		}
+		if err := useDockivaCLIContext(r.home); err != nil {
+			log.Printf("docker CLI context: %v", err)
+		}
+		return "vmfree", nil
+	}
+	if err := restoreDockerCLIContext(); err != nil {
+		log.Printf("docker CLI context: %v", err)
 	}
 	if backend == "auto" {
 		backend = s.engine.Name()

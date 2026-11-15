@@ -163,6 +163,18 @@ final class AppModel {
         }
     }
 
+    /// Creates (and by default starts) a container; returns the error message, if any.
+    func createContainer(_ request: CreateContainerRequest) async -> String? {
+        guard let core else { return "Dockiva's core is not running" }
+        do {
+            _ = try await core.call("DockerService.CreateContainer", [request], as: ContainerInfo.self)
+        } catch {
+            return error.localizedDescription
+        }
+        await refreshResources()
+        return nil
+    }
+
     func engineAction(start: Bool) async {
         guard let core, let settings else { return }
         engineBusy = true
