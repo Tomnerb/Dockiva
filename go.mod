@@ -5,7 +5,7 @@ go 1.26.3
 require (
 	github.com/containerd/containerd/v2 v2.3.4
 	github.com/containerd/errdefs v1.0.0
-	github.com/containerd/go-cni v1.1.14
+	github.com/containerd/go-cni v1.1.15
 	github.com/mdlayher/vsock v1.3.0
 	github.com/moby/moby/client v0.1.0
 	github.com/opencontainers/runtime-spec v1.3.0
@@ -28,7 +28,7 @@ require (
 	github.com/containerd/plugin v1.1.0 // indirect
 	github.com/containerd/ttrpc v1.2.8 // indirect
 	github.com/containerd/typeurl/v2 v2.2.3 // indirect
-	github.com/containernetworking/cni v1.3.0 // indirect
+	github.com/containernetworking/cni v1.3.1 // indirect
 	github.com/distribution/reference v0.6.0 // indirect
 	github.com/docker/go-connections v0.6.0 // indirect
 	github.com/docker/go-units v0.5.0 // indirect
